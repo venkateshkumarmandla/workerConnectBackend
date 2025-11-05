@@ -1,0 +1,26 @@
+# ✅ FULLY CONFIGURED - Ready to use!
+# Rename this file to .env to use it
+
+# Server Configuration
+PORT=3001
+NODE_ENV=development
+
+# Supabase Configuration - ALL CONFIGURED ✅
+SUPABASE_URL=https://jtseaglabuxnhowafnnm.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0c2VhZ2xhYnV4bmhvd2Fmbm5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNzcxODAsImV4cCI6MjA3Nzc1MzE4MH0.wCDoR5f2mBnznteAuAcRIO1uEUKvhD80JuVP8vHgWdk
+SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0c2VhZ2xhYnV4bmhvd2Fmbm5tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MjE3NzE4MCwiZXhwIjoyMDc3NzUzMTgwfQ.pgDg61H6mk6dn3W0Bjwp2yfAVCudAE7vFIGX7o9_pig
+
+# JWT Configuration
+JWT_SECRET=workerconnect-secret-key-2024-change-in-production
+JWT_EXPIRES_IN=7d
+
+# CORS Configuration
+FRONTEND_URL=http://localhost:5173
+
+# ============================================
+# TO USE THIS FILE:
+# 1. Rename this file from "env-ready-to-use.txt" to ".env"
+# 2. Run: npm install
+# 3. Run: npm run dev
+# ============================================
+

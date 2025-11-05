@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  workerconnect-backend:
+    build: .
+    container_name: workerconnect-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      # Add your Supabase credentials below
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      # Allow CORS from any origin (for mobile app access)
+      - FRONTEND_URL=*
+    restart: unless-stopped
+    networks:
+      - workerconnect-network
+
+networks:
+  workerconnect-network:
+    driver: bridge
+
