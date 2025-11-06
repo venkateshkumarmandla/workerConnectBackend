@@ -116,21 +116,21 @@ export const registerDepartment = async (req, res, next) => {
  */
 export const loginDepartment = async (req, res, next) => {
   try {
-    const { emailId, password } = req.body;
+    const { emailId, contactNumber, password } = req.body;
 
-    // Validate
-    if (!emailId || !password) {
+    // ✅ Validate
+    if ((!emailId && !contactNumber) || !password) {
       return res.status(400).json(
         errorResponse(
           ERROR_CODES.VALIDATION_ERROR,
-          'Email and password are required',
+          'Either emailId or contactNumber and password are required',
           'credentials'
         )
       );
     }
 
-    // Find department user with role details
-    const { data: deptUser, error } = await supabase
+    // ✅ Build query condition
+    let query = supabase
       .from('department_user')
       .select(`
         *,
@@ -140,20 +140,27 @@ export const loginDepartment = async (req, res, next) => {
           role_description
         )
       `)
-      .eq('email_id', emailId)
-      .single();
+      .limit(1); // Ensure single result
+
+    if (emailId) {
+      query = query.eq('email_id', emailId);
+    } else if (contactNumber) {
+      query = query.eq('contact_number', contactNumber);
+    }
+
+    const { data: deptUser, error } = await query.single();
 
     if (error || !deptUser) {
       return res.status(401).json(
         errorResponse(
           ERROR_CODES.AUTHENTICATION_ERROR,
-          'Invalid email or password',
+          'Invalid credentials (email/contact number or password)',
           'credentials'
         )
       );
     }
 
-    // Check status
+    // ✅ Check account status
     if (deptUser.status !== 'active') {
       return res.status(403).json(
         errorResponse(
@@ -164,25 +171,25 @@ export const loginDepartment = async (req, res, next) => {
       );
     }
 
-    // Verify password
+    // ✅ Verify password
     const isPasswordValid = await comparePassword(password, deptUser.password);
     if (!isPasswordValid) {
       return res.status(401).json(
         errorResponse(
           ERROR_CODES.AUTHENTICATION_ERROR,
-          'Invalid email or password',
+          'Invalid credentials (email/contact number or password)',
           'credentials'
         )
       );
     }
 
-    // Update last logged in
+    // ✅ Update last login timestamp
     await supabase
       .from('department_user')
       .update({ last_logged_in: new Date().toISOString() })
       .eq('department_user_id', deptUser.department_user_id);
 
-    // Generate token
+    // ✅ Generate token
     const token = generateToken({
       id: deptUser.department_user_id,
       type: 'department',
@@ -190,7 +197,7 @@ export const loginDepartment = async (req, res, next) => {
       roleName: deptUser.department_role.role_name
     });
 
-    // Response data
+    // ✅ Final response
     const responseData = {
       departmentRoleId: deptUser.department_role_id,
       roleName: deptUser.department_role.role_name,
@@ -202,12 +209,12 @@ export const loginDepartment = async (req, res, next) => {
       token: token
     };
 
-    res.json(successResponse(responseData));
-
+    return res.json(successResponse(responseData));
   } catch (error) {
     next(error);
   }
 };
+
 
 /**
  * Get department dashboard card details
