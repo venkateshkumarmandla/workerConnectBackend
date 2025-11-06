@@ -2,6 +2,114 @@ import { supabase } from '../config/supabase.js';
 import { comparePassword, generateToken } from '../middleware/auth.js';
 import { successResponse, errorResponse, ERROR_CODES } from '../utils/response.js';
 
+async function showTableColumns() {
+  const { data, error } = await supabase
+    .from('department_user')
+    .select('*')
+    .limit(1); // fetch just one row
+
+  if (error) {
+    console.error("Error fetching table data:", error);
+  } else if (data && data.length > 0) {
+    console.log("Keys found in department_user table:", Object.keys(data[0]));
+  } else {
+    console.log("No data found, but connection succeeded!");
+  }
+}
+
+showTableColumns();
+/**
+ * Department user registration
+ * POST /api/department/register
+ */
+export const registerDepartment = async (req, res, next) => {
+  try {
+    const { fullName, emailId, password, contactNumber, departmentRoleId } = req.body;
+
+    // Validate input
+    if (!fullName || !emailId || !password || !departmentRoleId) {
+      return res.status(400).json(
+        errorResponse(
+          ERROR_CODES.VALIDATION_ERROR,
+          'Full name, email, password, and department role are required',
+          'validation'
+        )
+      );
+    }
+
+    // Split full name into first and last name
+    const nameParts = fullName.trim().split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || null;
+
+    // Check if user already exists
+    const { data: existingUser } = await supabase
+      .from('department_user')
+      .select('email_id')
+      .eq('email_id', emailId)
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json(
+        errorResponse(
+          ERROR_CODES.DUPLICATE_ENTRY,
+          'User already registered with this email',
+          'emailId'
+        )
+      );
+    }
+
+    // Hash password
+    const { hashPassword } = await import('../middleware/auth.js');
+    const hashedPassword = await hashPassword(password);
+
+    // Insert new department user
+    const { data: newUser, error } = await supabase
+      .from('department_user')
+      .insert([
+        {
+          first_name: firstName,
+          last_name: lastName,
+          email_id: emailId,
+          password: hashedPassword,
+          contact_number: contactNumber || null,
+          department_role_id: departmentRoleId,
+          status: 'active',
+          created_at: new Date().toISOString()
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Generate token for immediate login
+    const token = generateToken({
+      id: newUser.department_user_id,
+      type: 'department',
+      roleId: newUser.department_role_id
+    });
+
+    const responseData = {
+      departmentUserId: newUser.department_user_id,
+      fullName: `${newUser.first_name} ${newUser.last_name || ''}`.trim(),
+      emailId: newUser.email_id,
+      contactNumber: newUser.contact_number,
+      departmentRoleId: newUser.department_role_id,
+      status: newUser.status,
+      token
+    };
+
+    res.status(201).json(successResponse(responseData));
+
+  } catch (error) {
+    console.error('Registration Error:', error);
+    next(error);
+  }
+};
+
+
+
 /**
  * Department user login
  * POST /api/department/login
