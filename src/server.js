@@ -35,7 +35,9 @@ const corsOptions = FRONTEND_URL === '*'
       origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5174',
         'capacitor://localhost',
   'http://localhost',            
-  'http://localhost:5173',      ],
+  'http://localhost:5173',
+'https://dulcet-cobbler-4df9df.netlify.app'
+     ],
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']
