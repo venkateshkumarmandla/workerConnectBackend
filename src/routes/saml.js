@@ -310,7 +310,7 @@ router.post('/logout', requireSamlAuth, (req, res) => {
 });
 
 /**
- * GET /metadata
+ * GET /metadata or GET /saml/metadata
  * 
  * Returns Service Provider (SP) metadata XML.
  * 
@@ -324,6 +324,20 @@ router.post('/logout', requireSamlAuth, (req, res) => {
  * - SP Certificate (for request signing)
  */
 router.get('/metadata', (req, res) => {
+  // Handle both /metadata and /saml/metadata
+  return handleMetadata(req, res);
+});
+
+// Also handle root path when mounted at /metadata
+router.get('/', (req, res) => {
+  // If this is the metadata mount point, return metadata
+  if (req.path === '/metadata' || req.originalUrl.includes('/metadata')) {
+    return handleMetadata(req, res);
+  }
+  res.status(404).json({ error: 'Not found' });
+});
+
+function handleMetadata(req, res) {
   try {
     // Generate SP metadata using passport-saml
     const metadata = samlStrategy.generateServiceProviderMetadata(
@@ -347,7 +361,10 @@ router.get('/metadata', (req, res) => {
       )
     );
   }
-});
+}
+
+// Export metadata handler for use in server.js
+export { handleMetadata };
 
 /**
  * POST /card-scan

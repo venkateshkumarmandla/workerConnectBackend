@@ -13,7 +13,7 @@ import establishmentRoutes from './routes/establishment.js';
 import departmentRoutes from './routes/department.js';
 import attendanceRoutes from './routes/attendance.js';
 import locationRoutes from './routes/location.js';
-import samlRoutes from './routes/saml.js';
+import samlRoutes, { handleMetadata } from './routes/saml.js';
 
 // Load environment variables
 dotenv.config();
@@ -139,7 +139,10 @@ app.get('/health', (req, res) => {
  * - GET  /saml/config    - SAML configuration status (dev only)
  */
 app.use('/saml', samlRoutes);
-app.use('/metadata', samlRoutes); // Also available at /metadata
+
+// Direct metadata route handler
+// This allows /metadata to work independently of /saml routes
+app.get('/metadata', handleMetadata);
 
 // ============================================
 // API ROUTES
