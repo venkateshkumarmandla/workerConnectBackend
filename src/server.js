@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import session from 'express-session';
+import passport from 'passport';
 import { testConnection } from './config/supabase.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { validateSamlConfig } from './config/saml.js';
 
 // Import routes
 import workerRoutes from './routes/worker.js';
@@ -10,6 +13,7 @@ import establishmentRoutes from './routes/establishment.js';
 import departmentRoutes from './routes/department.js';
 import attendanceRoutes from './routes/attendance.js';
 import locationRoutes from './routes/location.js';
+import samlRoutes from './routes/saml.js';
 
 // Load environment variables
 dotenv.config();
@@ -49,6 +53,46 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ============================================
+// SESSION CONFIGURATION
+// ============================================
+
+/**
+ * Session middleware for SAML authentication
+ * 
+ * Sessions are required for:
+ * - Storing SAML user information
+ * - Tracking pending card scans
+ * - Maintaining authentication state
+ */
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
+    httpOnly: true, // Prevent XSS attacks
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax' // CSRF protection
+  },
+  name: 'saml.sid' // Session cookie name
+}));
+
+// ============================================
+// PASSPORT INITIALIZATION
+// ============================================
+
+/**
+ * Initialize Passport for SAML authentication
+ * 
+ * Passport is used to:
+ * - Handle SAML authentication flow
+ * - Manage user sessions
+ * - Serialize/deserialize user objects
+ */
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Request logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -77,6 +121,29 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// ============================================
+// SAML AUTHENTICATION ROUTES
+// ============================================
+
+/**
+ * SAML authentication routes
+ * 
+ * Routes:
+ * - GET  /saml/login     - Initiate SAML authentication
+ * - POST /saml/acs       - SAML callback (Assertion Consumer Service)
+ * - POST /saml/logout    - SAML logout
+ * - GET  /metadata       - Service Provider metadata
+ * - POST /card-scan      - Card reader scan endpoint
+ * - GET  /saml/status    - Check authentication status
+ * - GET  /saml/config    - SAML configuration status (dev only)
+ */
+app.use('/saml', samlRoutes);
+app.use('/metadata', samlRoutes); // Also available at /metadata
+
+// ============================================
+// API ROUTES
+// ============================================
 
 // API routes with /api prefix to match frontend
 app.use('/api/worker', workerRoutes);
@@ -128,6 +195,16 @@ const startServer = async () => {
       console.log('📋 Available endpoints:');
       console.log('   GET  /');
       console.log('   GET  /health');
+      console.log('');
+      console.log('🔐 SAML Authentication:');
+      console.log('   GET  /saml/login     - Start SAML authentication');
+      console.log('   POST /saml/acs       - SAML callback');
+      console.log('   POST /saml/logout    - Logout');
+      console.log('   GET  /metadata       - SP metadata XML');
+      console.log('   POST /card-scan      - Card reader scan');
+      console.log('   GET  /saml/status    - Auth status');
+      console.log('');
+      console.log('📊 API Endpoints:');
       console.log('   POST /api/worker/register');
       console.log('   POST /api/worker/login');
       console.log('   POST /api/establishment/register');
@@ -138,6 +215,20 @@ const startServer = async () => {
       console.log('   GET  /api/establishmentcategory/details');
       console.log('   ... and more');
       console.log('');
+      
+      // Validate SAML configuration
+      const samlValidation = validateSamlConfig();
+      if (!samlValidation.valid) {
+        console.log('⚠️  SAML Configuration Warnings:');
+        samlValidation.errors.forEach(error => {
+          console.log(`   - ${error}`);
+        });
+        console.log('   Please configure SAML settings in .env file');
+        console.log('');
+      } else {
+        console.log('✅ SAML configuration validated');
+        console.log('');
+      }
       console.log('✨ Server is ready to accept connections');
       console.log('============================================');
       console.log('');
