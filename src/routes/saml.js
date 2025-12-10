@@ -98,18 +98,22 @@ passport.deserializeUser((user, done) => {
 // ============================================
 
 /**
- * GET /saml/login
- * 
- * Initiates SAML authentication flow.
- * 
- * Flow:
- * 1. User (or card scan) calls this endpoint
- * 2. Redirects user to SafeNet Trusted Access login page
- * 3. User authenticates with STA
- * 4. STA redirects back to /saml/acs with SAML response
- * 
- * If there's a pending cardId in session, it will be validated
- * after successful authentication.
+ * @swagger
+ * /saml/login:
+ *   get:
+ *     summary: Initiate SAML authentication
+ *     description: |
+ *       Initiates SAML authentication flow with SafeNet Trusted Access.
+ *       Redirects user to STA login page. After authentication, STA redirects to /saml/acs.
+ *       
+ *       If there's a pending cardId in session (from /card-scan), it will be validated
+ *       after successful authentication.
+ *     tags: [SAML Authentication]
+ *     responses:
+ *       302:
+ *         description: Redirects to SafeNet Trusted Access login page
+ *       500:
+ *         description: Server error
  */
 router.get('/login', (req, res, next) => {
   // Check if there's a pending card scan
@@ -131,19 +135,38 @@ router.get('/login', (req, res, next) => {
 });
 
 /**
- * POST /saml/acs
- * 
- * Assertion Consumer Service (ACS) - SAML callback endpoint.
- * 
- * This is where SafeNet Trusted Access sends the SAML response
- * after the user authenticates.
- * 
- * Flow:
- * 1. STA redirects here with SAML response
- * 2. Passport validates the SAML response
- * 3. User profile is extracted and validated
- * 4. If cardId was scanned, validate it matches STA user
- * 5. Create session and redirect to dashboard
+ * @swagger
+ * /saml/acs:
+ *   post:
+ *     summary: SAML Assertion Consumer Service (ACS) callback
+ *     description: |
+ *       This is the callback endpoint where SafeNet Trusted Access sends the SAML response
+ *       after user authentication. This endpoint is called automatically by STA.
+ *       
+ *       Flow:
+ *       1. STA redirects here with SAML response
+ *       2. Backend validates the SAML response
+ *       3. User profile is extracted and validated
+ *       4. If cardId was scanned, validate it matches STA user
+ *       5. Create session and redirect to dashboard
+ *     tags: [SAML Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               SAMLResponse:
+ *                 type: string
+ *                 description: Base64 encoded SAML response from STA
+ *     responses:
+ *       302:
+ *         description: Redirects to /dashboard on success, /login on failure
+ *       403:
+ *         description: Card ID validation failed
+ *       500:
+ *         description: Server error
  */
 router.post('/acs', 
   passport.authenticate('saml', { 
@@ -260,18 +283,31 @@ router.post('/acs',
 );
 
 /**
- * POST /saml/logout
- * 
- * SAML logout handler.
- * 
- * Flow:
- * 1. Clears local session
- * 2. Optionally initiates SAML logout with STA (Single Logout)
- * 3. Redirects to login page
- * 
- * This is called when:
- * - User explicitly logs out
- * - New card scan happens while user is logged in
+ * @swagger
+ * /saml/logout:
+ *   post:
+ *     summary: SAML logout
+ *     description: |
+ *       Logs out the current SAML-authenticated user.
+ *       Clears local session and optionally initiates SAML logout with STA.
+ *       
+ *       This is called when:
+ *       - User explicitly logs out
+ *       - New card scan happens while user is logged in
+ *     tags: [SAML Authentication]
+ *     security:
+ *       - samlAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       302:
+ *         description: Redirects to /login
+ *       401:
+ *         description: Not authenticated
  */
 router.post('/logout', requireSamlAuth, (req, res) => {
   const user = req.session.samlUser;
@@ -310,18 +346,30 @@ router.post('/logout', requireSamlAuth, (req, res) => {
 });
 
 /**
- * GET /metadata or GET /saml/metadata
- * 
- * Returns Service Provider (SP) metadata XML.
- * 
- * This metadata needs to be uploaded to SafeNet Trusted Access
- * to configure the Service Provider.
- * 
- * The metadata includes:
- * - Entity ID
- * - ACS URL
- * - Logout URL
- * - SP Certificate (for request signing)
+ * @swagger
+ * /metadata:
+ *   get:
+ *     summary: Get Service Provider (SP) metadata XML
+ *     description: |
+ *       Returns the SAML Service Provider metadata in XML format.
+ *       This metadata should be uploaded to SafeNet Trusted Access to configure the SP.
+ *       
+ *       The metadata includes:
+ *       - Entity ID
+ *       - Assertion Consumer Service (ACS) URL
+ *       - Single Logout Service (SLO) URL
+ *       - SP Certificate (for request signing)
+ *     tags: [SAML Authentication]
+ *     responses:
+ *       200:
+ *         description: SAML metadata XML
+ *         content:
+ *           application/xml:
+ *             schema:
+ *               type: string
+ *               format: xml
+ *       500:
+ *         description: Failed to generate metadata
  */
 router.get('/metadata', (req, res) => {
   // Handle both /metadata and /saml/metadata
@@ -367,21 +415,50 @@ function handleMetadata(req, res) {
 export { handleMetadata };
 
 /**
- * POST /card-scan
- * 
- * Card reader scan endpoint.
- * 
- * This endpoint receives the cardId from a card reader
- * (via serial port, USB, or HTTP request).
- * 
- * Flow:
- * 1. Receive cardId from card reader
- * 2. Store cardId in session (pendingCardId)
- * 3. If user is already logged in → logout first
- * 4. Redirect to /saml/login to start authentication
- * 
- * After SAML authentication completes, the cardId will be
- * validated against the STA user's employeeNumber/NameID.
+ * @swagger
+ * /card-scan:
+ *   post:
+ *     summary: Card reader scan endpoint
+ *     description: |
+ *       Receives cardId from a card reader and initiates SAML authentication.
+ *       
+ *       Flow:
+ *       1. Receive cardId from card reader
+ *       2. Store cardId in session (pendingCardId)
+ *       3. If user is already logged in → logout first
+ *       4. Redirect to /saml/login to start authentication
+ *       
+ *       After SAML authentication completes, the cardId will be validated
+ *       against the STA user's employeeNumber/NameID.
+ *     tags: [SAML Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - cardId
+ *             properties:
+ *               cardId:
+ *                 type: string
+ *                 description: Card ID scanned by the card reader
+ *                 example: "12345"
+ *     responses:
+ *       200:
+ *         description: Card scan received, redirecting to SAML login
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *       302:
+ *         description: Redirects to /saml/login
+ *       400:
+ *         description: Invalid cardId
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/card-scan', async (req, res) => {
   try {
@@ -481,11 +558,41 @@ router.post('/card-scan', async (req, res) => {
 });
 
 /**
- * GET /saml/status
- * 
- * Check SAML authentication status.
- * 
- * Returns the current authentication status and user info.
+ * @swagger
+ * /saml/status:
+ *   get:
+ *     summary: Check SAML authentication status
+ *     description: Returns the current SAML authentication status and user information
+ *     tags: [SAML Authentication]
+ *     responses:
+ *       200:
+ *         description: Authentication status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 correlationId:
+ *                   type: string
+ *                   format: uuid
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     authenticated:
+ *                       type: boolean
+ *                     user:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         nameID:
+ *                           type: string
+ *                         employeeNumber:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                     pendingCardId:
+ *                       type: string
+ *                       nullable: true
  */
 router.get('/status', (req, res) => {
   const isAuthenticated = req.session.samlUser && req.user;

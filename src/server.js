@@ -3,6 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from 'passport';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
 import { testConnection } from './config/supabase.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { validateSamlConfig } from './config/saml.js';
@@ -114,12 +116,60 @@ app.get('/', (req, res) => {
 });
 
 // Health check endpoint
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Returns the health status of the API and database connection
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: healthy
+ *                 database:
+ *                   type: string
+ *                   example: connected
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     database: 'connected',
     timestamp: new Date().toISOString()
   });
+});
+
+// ============================================
+// SWAGGER API DOCUMENTATION
+// ============================================
+
+/**
+ * Swagger UI endpoint
+ * Access the interactive API documentation at /api-docs
+ */
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'WorkerConnect API Documentation',
+  customfavIcon: '/favicon.ico'
+}));
+
+/**
+ * Swagger JSON endpoint
+ * Returns the OpenAPI specification in JSON format
+ */
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
 });
 
 // ============================================
@@ -198,6 +248,10 @@ const startServer = async () => {
       console.log('📋 Available endpoints:');
       console.log('   GET  /');
       console.log('   GET  /health');
+      console.log('');
+      console.log('📚 API Documentation:');
+      console.log('   GET  /api-docs       - Swagger UI (Interactive API Docs)');
+      console.log('   GET  /api-docs.json  - OpenAPI JSON specification');
       console.log('');
       console.log('🔐 SAML Authentication:');
       console.log('   GET  /saml/login     - Start SAML authentication');
