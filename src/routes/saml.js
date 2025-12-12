@@ -43,36 +43,36 @@ const samlStrategy = new SamlStrategy(
       const userAttributes = {
         // NameID is the primary identifier from STA
         nameID: profile.nameID || profile['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'],
-        
+
         // Employee number / Card ID
         // This should match the cardId scanned by the card reader
-        employeeNumber: profile.employeeNumber || 
-                        profile['employeeNumber'] ||
-                        profile['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'],
-        
+        employeeNumber: profile.employeeNumber ||
+          profile['employeeNumber'] ||
+          profile['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'],
+
         // Email (if available)
-        email: profile.email || 
-               profile['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'],
-        
+        email: profile.email ||
+          profile['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'],
+
         // Additional attributes
         firstName: profile.firstName || profile.givenName,
         lastName: profile.lastName || profile.surname,
-        
+
         // Full profile for debugging
         fullProfile: profile
       };
-      
+
       // Log the profile for debugging (remove in production)
       console.log('📋 SAML Profile received:', {
         nameID: userAttributes.nameID,
         employeeNumber: userAttributes.employeeNumber,
         email: userAttributes.email
       });
-      
+
       // Return the user object to Passport
       // This will be attached to req.user after authentication
       return done(null, userAttributes);
-      
+
     } catch (error) {
       console.error('❌ Error processing SAML profile:', error);
       return done(error, null);
@@ -118,13 +118,13 @@ passport.deserializeUser((user, done) => {
 router.get('/login', (req, res, next) => {
   // Check if there's a pending card scan
   const pendingCardId = req.session.pendingCardId;
-  
+
   if (pendingCardId) {
     console.log(`🔐 Starting SAML login for card scan: ${pendingCardId}`);
   } else {
     console.log('🔐 Starting SAML login (manual)');
   }
-  
+
   // Initiate SAML authentication
   // Passport will redirect to STA entry point
   passport.authenticate('saml', {
@@ -168,47 +168,47 @@ router.get('/login', (req, res, next) => {
  *       500:
  *         description: Server error
  */
-router.post('/acs', 
-  passport.authenticate('saml', { 
+router.post('/acs',
+  passport.authenticate('saml', {
     failureRedirect: '/login',
-    failureFlash: false 
+    failureFlash: false
   }),
   async (req, res) => {
     try {
       // After successful SAML authentication, req.user contains the user profile
       const samlUser = req.user;
       const pendingCardId = req.session.pendingCardId;
-      
+
       console.log('✅ SAML authentication successful');
       console.log('👤 User:', {
         nameID: samlUser.nameID,
         employeeNumber: samlUser.employeeNumber
       });
-      
+
       // ============================================
       // CARD ID VALIDATION
       // ============================================
-      
+
       // If there's a pending card scan, validate the cardId
       if (pendingCardId) {
         console.log(`🔍 Validating card scan: ${pendingCardId}`);
-        
+
         // Extract the identifier from SAML response
         // This could be NameID or employeeNumber attribute
         const userIdentifier = samlUser.employeeNumber || samlUser.nameID;
-        
+
         // Validate that the STA user matches the scanned card
         if (userIdentifier !== pendingCardId) {
           console.error('❌ Card ID mismatch!');
           console.error(`   Scanned card: ${pendingCardId}`);
           console.error(`   STA user: ${userIdentifier}`);
-          
+
           // Clear session and deny access
           clearSamlSession(req);
           req.logout((err) => {
             if (err) console.error('Logout error:', err);
           });
-          
+
           return res.status(403).json(
             errorResponse(
               ERROR_CODES.AUTHORIZATION_ERROR,
@@ -217,17 +217,17 @@ router.post('/acs',
             )
           );
         }
-        
+
         console.log('✅ Card ID validated successfully');
-        
+
         // Clear pending cardId from session
         delete req.session.pendingCardId;
       }
-      
+
       // ============================================
       // SESSION MANAGEMENT
       // ============================================
-      
+
       // Store SAML user in session
       req.session.samlUser = {
         nameID: samlUser.nameID,
@@ -237,7 +237,7 @@ router.post('/acs',
         lastName: samlUser.lastName,
         authenticatedAt: new Date().toISOString()
       };
-      
+
       // Save session
       req.session.save((err) => {
         if (err) {
@@ -250,27 +250,26 @@ router.post('/acs',
             )
           );
         }
-        
+
         console.log('✅ Session saved successfully');
-        
+
         // Redirect to dashboard after successful authentication
-        // In a SPA, you might want to return JSON instead
+        // Return JSON with redirect URL if requested (for SPA)
         if (req.headers['content-type']?.includes('application/json')) {
-          return res.json(successResponse({
-            message: 'SAML authentication successful',
-            user: req.session.samlUser,
-            redirectTo: '/dashboard'
-          }));
+          return res.json({
+            redirectUrl: "https://dulcet-cobbler-4df9df.netlify.app/dashboard/worker"
+          });
         }
-        
-        // HTML redirect (for browser-based flows)
-        res.redirect('/dashboard');
+
+        // HTML redirect (for browser-based flows - standard SAML flow)
+        // Redirecting to the frontend application
+        res.redirect("https://dulcet-cobbler-4df9df.netlify.app/dashboard/worker");
       });
-      
+
     } catch (error) {
       console.error('❌ Error in SAML ACS callback:', error);
       clearSamlSession(req);
-      
+
       res.status(500).json(
         errorResponse(
           ERROR_CODES.INTERNAL_ERROR,
@@ -311,26 +310,26 @@ router.post('/acs',
  */
 router.post('/logout', requireSamlAuth, (req, res) => {
   const user = req.session.samlUser;
-  
+
   console.log('🚪 Logging out user:', user?.nameID || 'unknown');
-  
+
   // Clear SAML session
   clearSamlSession(req);
-  
+
   // Logout from Passport
   req.logout((err) => {
     if (err) {
       console.error('❌ Logout error:', err);
     }
-    
+
     // Destroy session
     req.session.destroy((err) => {
       if (err) {
         console.error('❌ Session destroy error:', err);
       }
-      
+
       console.log('✅ Logout successful');
-      
+
       // Return JSON response for API calls
       if (req.headers['content-type']?.includes('application/json')) {
         return res.json(successResponse({
@@ -338,7 +337,7 @@ router.post('/logout', requireSamlAuth, (req, res) => {
           redirectTo: '/login'
         }));
       }
-      
+
       // HTML redirect
       res.redirect('/login');
     });
@@ -392,13 +391,13 @@ function handleMetadata(req, res) {
       samlConfig.publicCert,  // SP certificate
       samlConfig.privateKey   // SP private key (for signing)
     );
-    
+
     // Set content type to XML
     res.type('application/xml');
     res.send(metadata);
-    
+
     console.log('📄 SP metadata requested');
-    
+
   } catch (error) {
     console.error('❌ Error generating metadata:', error);
     res.status(500).json(
@@ -463,7 +462,7 @@ export { handleMetadata };
 router.post('/card-scan', async (req, res) => {
   try {
     const { cardId } = req.body;
-    
+
     // Validate cardId
     if (!cardId || typeof cardId !== 'string' || cardId.trim().length === 0) {
       return res.status(400).json(
@@ -474,24 +473,24 @@ router.post('/card-scan', async (req, res) => {
         )
       );
     }
-    
+
     const trimmedCardId = cardId.trim();
     console.log(`💳 Card scan received: ${trimmedCardId}`);
-    
+
     // ============================================
     // CHECK IF USER IS ALREADY LOGGED IN
     // ============================================
-    
+
     const isLoggedIn = req.session.samlUser && req.user;
-    
+
     if (isLoggedIn) {
       const currentUser = req.session.samlUser;
       console.log(`🔄 User already logged in: ${currentUser.nameID}`);
       console.log(`   Logging out before processing new card scan...`);
-      
+
       // Clear current session
       clearSamlSession(req);
-      
+
       // Logout from Passport
       req.logout((err) => {
         if (err) {
@@ -499,15 +498,15 @@ router.post('/card-scan', async (req, res) => {
         }
       });
     }
-    
+
     // ============================================
     // STORE CARD ID IN SESSION
     // ============================================
-    
+
     // Store the scanned cardId in session
     // This will be validated after SAML authentication
     req.session.pendingCardId = trimmedCardId;
-    
+
     // Save session
     req.session.save((err) => {
       if (err) {
@@ -520,14 +519,14 @@ router.post('/card-scan', async (req, res) => {
           )
         );
       }
-      
+
       console.log(`✅ Card ID stored in session: ${trimmedCardId}`);
       console.log(`   Redirecting to SAML login...`);
-      
+
       // ============================================
       // REDIRECT TO SAML LOGIN
       // ============================================
-      
+
       // Return JSON response for API calls
       if (req.headers['content-type']?.includes('application/json')) {
         return res.json(successResponse({
@@ -536,17 +535,17 @@ router.post('/card-scan', async (req, res) => {
           redirectTo: '/saml/login'
         }));
       }
-      
+
       // HTML redirect to SAML login
       res.redirect('/saml/login');
     });
-    
+
   } catch (error) {
     console.error('❌ Error processing card scan:', error);
-    
+
     // Clear any partial session state
     clearSamlSession(req);
-    
+
     res.status(500).json(
       errorResponse(
         ERROR_CODES.INTERNAL_ERROR,
@@ -572,44 +571,31 @@ router.post('/card-scan', async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 correlationId:
- *                   type: string
- *                   format: uuid
- *                 data:
+ *                 isAuthenticated:
+ *                   type: boolean
+ *                 user:
  *                   type: object
- *                   properties:
- *                     authenticated:
- *                       type: boolean
- *                     user:
- *                       type: object
- *                       nullable: true
- *                       properties:
- *                         nameID:
- *                           type: string
- *                         employeeNumber:
- *                           type: string
- *                         email:
- *                           type: string
- *                     pendingCardId:
- *                       type: string
- *                       nullable: true
+ *                   nullable: true
  */
 router.get('/status', (req, res) => {
-  const isAuthenticated = req.session.samlUser && req.user;
-  
+  const isAuthenticated = !!(req.session.samlUser && req.user);
+
   if (isAuthenticated) {
-    return res.json(successResponse({
-      authenticated: true,
-      user: req.session.samlUser,
-      pendingCardId: req.session.pendingCardId || null
-    }));
+    const user = req.session.samlUser;
+    return res.json({
+      isAuthenticated: true,
+      user: {
+        workerId: user.employeeNumber, // Mapping employeeNumber as workerId as requested
+        name: user.firstName + (user.lastName ? ' ' + user.lastName : ''),
+        cardId: user.employeeNumber,
+        ...user
+      }
+    });
   }
-  
-  res.json(successResponse({
-    authenticated: false,
-    user: null,
-    pendingCardId: req.session.pendingCardId || null
-  }));
+
+  res.json({
+    isAuthenticated: false
+  });
 });
 
 /**
@@ -628,9 +614,9 @@ router.get('/config', (req, res) => {
       )
     );
   }
-  
+
   const validation = validateSamlConfig();
-  
+
   res.json(successResponse({
     configured: validation.valid,
     errors: validation.errors,

@@ -30,24 +30,24 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // CORS configuration
 // Allow all origins when FRONTEND_URL is '*' (for mobile app access)
-const corsOptions = FRONTEND_URL === '*' 
+const corsOptions = FRONTEND_URL === '*'
   ? {
-      origin: true, // Allow all origins
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization']
-    }
+    origin: true, // Allow all origins
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }
   : {
-      origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5174',
-        'capacitor://localhost',
-  'http://localhost',            
-  'http://localhost:5173',
-'https://dulcet-cobbler-4df9df.netlify.app'
-     ],
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization']
-    };
+    origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5174',
+      'capacitor://localhost',
+      'http://localhost',
+      'http://localhost:5173',
+      'https://dulcet-cobbler-4df9df.netlify.app'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  };
 
 app.use(cors(corsOptions));
 
@@ -58,6 +58,9 @@ app.use(express.urlencoded({ extended: true }));
 // ============================================
 // SESSION CONFIGURATION
 // ============================================
+
+// Trust proxy is required for secure cookies behind a load balancer (like Render)
+app.set('trust proxy', 1);
 
 /**
  * Session middleware for SAML authentication
@@ -70,12 +73,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
   resave: false,
-  saveUninitialized: false,
+  saveUninitialized: false, // Don't create session until something is stored
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
+    secure: true, // Always use HTTPS (Render handles SSL)
     httpOnly: true, // Prevent XSS attacks
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax' // CSRF protection
+    sameSite: 'none' // Required for cross-site cookie (Netlify -> Render)
   },
   name: 'saml.sid' // Session cookie name
 }));
@@ -142,7 +145,7 @@ app.get('/', (req, res) => {
  *                   format: date-time
  */
 app.get('/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'healthy',
     database: 'connected',
     timestamp: new Date().toISOString()
@@ -209,6 +212,142 @@ app.use('/api/location', locationRoutes);
 app.use('/api', locationRoutes); // Also mount at /api root for establishmentcategory/details paths
 
 // ============================================
+// API COUNT ROUTE
+// ============================================
+
+/**
+ * Infer related table based on route path
+ */
+const inferTable = (path) => {
+  if (!path) return 'unknown';
+
+  if (path.includes('/api/worker')) return 'worker';
+  if (path.includes('/api/establishment')) return 'establishment';
+  if (path.includes('/api/department')) return 'department_user';
+  if (path.includes('/api/attendance')) return 'attendance_log';
+  if (path.includes('/api/location')) return 'states, districts, cities';
+  if (path.includes('/saml')) return 'saml_config';
+  if (path.includes('/api-docs')) return 'swagger_docs';
+
+  return 'system/other';
+};
+
+/**
+ * Recursive function to get details of all registered routes
+ */
+const getRouteDetails = (stack, basePath = '') => {
+  let routes = [];
+
+  stack.forEach(layer => {
+    if (layer.route) {
+      // It's a route registered directly
+      const path = basePath + layer.route.path;
+      const validMethods = Object.keys(layer.route.methods)
+        .filter(method => layer.route.methods[method])
+        .map(method => method.toUpperCase());
+
+      validMethods.forEach(method => {
+        routes.push({
+          method,
+          path,
+          relatedTable: inferTable(path)
+        });
+      });
+    } else if (layer.name === 'router' && layer.handle.stack) {
+      // It's a router middleware
+      // Express routers use regex for matching, we try to extract the base path
+      // This is a bit tricky with Express internals, but usually the regexp string is available
+      // or we can look at the trim prefix if available.
+      // For simplicity in this codebase structure, we might need a workaround or 
+      // rely on the layer.regexp to guess the path if not explicit.
+
+      // However, seeing how routes are mounted in this file:
+      // app.use('/api/worker', workerRoutes);
+      // We can iterate the stack passed to app.use, but getting the mount path 
+      // from inside the router stack recursively is hard without passing it down.
+      // But! In `app._router.stack`, the layer for a mounted router has a specific regex.
+      // Parsing that regex to get the string path is complex.
+
+      // ALTERNATIVE: Since we know the main mount points, we can traverse them manually 
+      // OR we can try to extract from the regex fast path if available.
+
+      // Let's rely on the fact that we can often "guess" the prefix from the regex source 
+      // or manually map known routers if we wanted perfect precision.
+      // But let's try a best effort extraction first.
+
+      let prefix = '';
+      if (layer.regexp.fast_slash) {
+        prefix = '';
+      } else {
+        const match = layer.regexp.toString().match(/^\/\^\\\/([a-zA-Z0-9_\-\/]+)\\\//);
+        if (match && match[1]) {
+          prefix = '/' + match[1];
+        } else {
+          // Fallback for more complex regex or root mounts
+          // If we can't detect it easily, we might miss the prefix.
+          // Given the specific mounts in this file:
+          // /api/worker, /saml, etc. are mounted with app.use(path, router)
+        }
+
+        // Better approach for Express 4:
+        // The mount path is not easily stored in the layer itself in a string format.
+        // It is stored in the unexpected way.
+      }
+
+      // Actually, for this specific request, we might want to just iterate the known routers 
+      // if generic recursion is too flaky for mount points.
+      // But let's try a simpler approach recursively ignoring the prefix issue for a moment
+      // and see if we can just list the sub-routes.
+      // WITHOUT the correct prefix, the paths will be partial (e.g. just `/register` instead of `/api/worker/register`).
+
+      // To fix this properly without deep hacks:
+      // We can manually call a helper for each known router if generic is hard.
+      // OR we can look at the `path` property if it exists (some middleware modifications add it).
+
+      // Let's try to pass the known prefixes based on how we mounted them in this file.
+      // But we want this to be dynamic. 
+      // Let's stick with the generic one, but if we see 'router', we dig in. 
+      // *Problem*: We won't know the parent path (e.g. '/api/worker') easily.
+
+      // Hacky but effective for standard Express apps:
+      // Inspect `layer.regexp`
+
+      const regexStr = layer.regexp.toString();
+      // Example: /^\/api\/worker\/?(?=\/|$)/i
+      const cleanPath = regexStr
+        .replace(/^\/\^/, '') // remove start anchor
+        .replace(/\\\//g, '/') // unescape slashes
+        .replace(/\/\?\(.*$/, '') // remove end matching group
+        .replace(/\/i$/, '') // remove flags
+        .replace(/\/$/, ''); // remove trailing slash
+
+      // Ensure we treat it as a segment
+      const routerPath = cleanPath.startsWith('/') ? cleanPath : '/' + cleanPath;
+
+      // Avoid adding base path for global middlewares that match everything (fast_slash)
+      const nextBase = layer.regexp.fast_slash ? basePath : (basePath + routerPath);
+
+      routes = routes.concat(getRouteDetails(layer.handle.stack, nextBase));
+    }
+  });
+  return routes;
+};
+
+/**
+ * API Count endpoint
+ * Returns the total number of registered API endpoints with details
+ */
+app.get('/api-count', (req, res) => {
+  const routes = getRouteDetails(app._router.stack);
+
+  res.json({
+    count: routes.length,
+    timestamp: new Date().toISOString(),
+    endpoints: routes
+  });
+});
+
+// ============================================
 // ERROR HANDLING
 // ============================================
 
@@ -227,7 +366,7 @@ const startServer = async () => {
     // Test database connection
     console.log('🔄 Testing Supabase connection...');
     const connected = await testConnection();
-    
+
     if (!connected) {
       console.error('⚠️  Database connection failed, but starting server anyway');
       console.error('   Please check your .env file and Supabase credentials');
@@ -272,7 +411,7 @@ const startServer = async () => {
       console.log('   GET  /api/establishmentcategory/details');
       console.log('   ... and more');
       console.log('');
-      
+
       // Validate SAML configuration
       const samlValidation = validateSamlConfig();
       if (!samlValidation.valid) {

@@ -23,54 +23,54 @@ export const samlConfig = {
   // ============================================
   // SERVICE PROVIDER (SP) CONFIGURATION
   // ============================================
-  
+
   // Entity ID - Unique identifier for this Service Provider
   // This must match what you configure in STA
   // Format: Usually a URL like https://yourdomain.com/saml/metadata
   entityId: process.env.SAML_ENTITY_ID || 'https://workerconnectbackend.onrender.com/saml/metadata',
-  
+
   // Assertion Consumer Service (ACS) URL
   // This is where STA will send the SAML response after authentication
   // Must match the route: /saml/acs
   callbackUrl: process.env.SAML_ACS_URL || 'https://workerconnectbackend.onrender.com/saml/acs',
-  
+
   // Single Logout Service (SLO) URL
   // This is where STA will send logout requests
   // Must match the route: /saml/logout
   logoutUrl: process.env.SAML_LOGOUT_URL || 'https://workerconnectbackend.onrender.com/saml/logout',
-  
+
   // ============================================
   // IDENTITY PROVIDER (IDP) CONFIGURATION
   // ============================================
-  
+
   // STA Entry Point URL
   // This is the SAML SSO URL provided by SafeNet Trusted Access
   // Format: https://<tenant>.safenetidp.com/saml/sso
-  entryPoint: process.env.SAML_ENTRY_POINT || 'https://your-tenant.safenetidp.com/saml/sso',
-  
+  entryPoint: process.env.SAML_ENTRY_POINT || 'https://idp.eu.safenetid.com/auth/realms/2UUO14PJ1G-STA/protocol/saml',
+
   // STA Issuer/Entity ID
   // This is the Entity ID of your SafeNet Trusted Access tenant
   // You'll get this from STA metadata
-  issuer: process.env.SAML_ISSUER || 'https://your-tenant.safenetidp.com',
-  
+  issuer: process.env.SAML_ISSUER || 'https://idp.eu.safenetid.com/auth/realms/2UUO14PJ1G-STA',
+
   // STA Certificate
   // This is the public certificate from SafeNet Trusted Access
   // You can get this from STA metadata or download it from STA console
   // It's used to verify SAML responses are from STA
   cert: process.env.SAML_IDP_CERT || `-----BEGIN CERTIFICATE-----
-YOUR_STA_CERTIFICATE_HERE
+MIICqzCCAZMCBgGWSJt8fjANBgkqhkiG9w0BAQsFADAZMRcwFQYDVQQDDA4yVVVPMTRQSjFHLVNUQTAeFw0yNTA0MTgxMTEyNTFaFw0zNTA0MTgxMTE0MzFaMBkxFzAVBgNVBAMMDjJVVU8xNFBKMUctU1RBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6Xz+jVxL6AwLRHQgTKiBhabhubBBKKQK1mdP5EtNuR/MVo4BtskEZDTUbzvVvvPqB8ufUIxUUu3zgxp3z8FHc1b6i9I82knC2BTPupWOMr52wh3Onhp3F/lhK4RzTE88sMlwmnkMMUavrQKAkwtsuXNQdwKRQlpuwfdPRujH8ZoCCafOo9c1MLCHNZvbe4uiaK8UQJKJaiZ4gQ8Ss6upDbacQWJcY5IrIzeB3hRDqKAnt2zYMs/V42QULzpHU1sDkjicFNdPxdGjnHkeEi6YQORBywc2+llM7Jv0zVrBbrpBF3/ZJjfszepM76ZG8tMBtfiU3xzwKUTfMNFdJnOT6QIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQBmqkcsmgghXk1Yq6ASW9SVDRApkCepm8z69AkF/myUVJAMNgzKmEAq6nTd7kI84Z0J3lqoyrYSv7HNUhmwvPWBU5g2sLmqlNQU7cH0DAO3yHv5Q/aplI8ZBN1vpEyCNQcs7CyHNRcp6yhnfHq5dHtQAjyarlmfDgqi/KItlmCtCnn0iViv3ccIpXRK5hbHXCAid2rqf7qpmv9n3nrvQ5U9s7aKDz6qIs6DWK4JQcVbbZ4aB27/8J92GKUE0ifBUkPN9Vkkul52Q2fBcQls1o6QLUzUUnIaKKQMIBMBB3SQAkMfbwbXuKDHVWRLqbDtzRYKHZP3t2G8KLhk6LfUbTmO
 -----END CERTIFICATE-----`,
-  
+
   // ============================================
   // CERTIFICATE CONFIGURATION
   // ============================================
-  
+
   // Service Provider Private Key
   // Generate this using: openssl genrsa -out sp-private-key.pem 2048
   // Store the path or the key content in environment variable
   privateKey: process.env.SAML_SP_PRIVATE_KEY || (() => {
     try {
-      const keyPath = path.join(__dirname, '../../certs/sp-private-key.pem');
+      const keyPath = path.join(__dirname, '../../sp-key.pem');
       if (fs.existsSync(keyPath)) {
         return fs.readFileSync(keyPath, 'utf8');
       }
@@ -79,13 +79,13 @@ YOUR_STA_CERTIFICATE_HERE
     }
     return null;
   })(),
-  
+
   // Service Provider Certificate
   // Generate this using: openssl req -new -x509 -key sp-private-key.pem -out sp-certificate.pem -days 365
   // Store the path or the cert content in environment variable
   publicCert: process.env.SAML_SP_CERT || (() => {
     try {
-      const certPath = path.join(__dirname, '../../certs/sp-certificate.pem');
+      const certPath = path.join(__dirname, '../../sp-cert.pem');
       if (fs.existsSync(certPath)) {
         return fs.readFileSync(certPath, 'utf8');
       }
@@ -94,11 +94,11 @@ YOUR_STA_CERTIFICATE_HERE
     }
     return null;
   })(),
-  
+
   // ============================================
   // SAML PROTOCOL SETTINGS
   // ============================================
-  
+
   // NameID Format
   // Common formats:
   // - urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
@@ -107,30 +107,30 @@ YOUR_STA_CERTIFICATE_HERE
   // - urn:oasis:names:tc:SAML:2.0:nameid-format:transient
   // For card-based login, use persistent or unspecified
   nameIDFormat: process.env.SAML_NAME_ID_FORMAT || 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
-  
+
   // Signature Algorithm
   signatureAlgorithm: process.env.SAML_SIGNATURE_ALGORITHM || 'sha256',
-  
+
   // Digest Algorithm
   digestAlgorithm: process.env.SAML_DIGEST_ALGORITHM || 'sha256',
-  
+
   // Force Authentication
   // If true, user must re-authenticate even if already logged in
   forceAuthn: false,
-  
+
   // Request signing
   // Whether to sign SAML requests
   wantAssertionsSigned: true,
   wantMessageSigned: true,
-  
+
   // Additional context
   additionalParams: {},
   additionalAuthorizeParams: {},
-  
+
   // ============================================
   // ATTRIBUTE MAPPING
   // ============================================
-  
+
   // Attribute names that STA will send
   // Map these to the attributes you configure in STA
   // Common attributes:
@@ -148,14 +148,14 @@ YOUR_STA_CERTIFICATE_HERE
     'employeeNumber': 'employeeNumber',
     'cardId': 'cardId',
   },
-  
+
   // ============================================
   // PASSPORT SAML STRATEGY CONFIGURATION
   // ============================================
-  
+
   // Passport SAML Strategy Options
   // This will be used to create the SAML strategy
-  getPassportSamlOptions: function() {
+  getPassportSamlOptions: function () {
     return {
       // Service Provider configuration
       entryPoint: this.entryPoint,
@@ -163,26 +163,26 @@ YOUR_STA_CERTIFICATE_HERE
       callbackUrl: this.callbackUrl,
       logoutUrl: this.logoutUrl,
       cert: this.cert,
-      
+
       // Certificate for signing requests (optional but recommended)
       privateKey: this.privateKey,
       decryptionPvk: this.privateKey,
       privateCert: this.publicCert,
-      
+
       // Protocol settings
       identifierFormat: this.nameIDFormat,
       signatureAlgorithm: this.signatureAlgorithm,
       digestAlgorithm: this.digestAlgorithm,
-      
+
       // Security settings
       wantAssertionsSigned: this.wantAssertionsSigned,
       wantMessageSigned: this.wantMessageSigned,
       forceAuthn: this.forceAuthn,
-      
+
       // Additional parameters
       additionalParams: this.additionalParams,
       additionalAuthorizeParams: this.additionalAuthorizeParams,
-      
+
       // Attribute mapping
       // Passport-saml will automatically map attributes based on the SAML response
       // You can access them in the profile object
@@ -196,31 +196,31 @@ YOUR_STA_CERTIFICATE_HERE
  */
 export const validateSamlConfig = () => {
   const errors = [];
-  
+
   if (!samlConfig.entryPoint || samlConfig.entryPoint.includes('your-tenant')) {
     errors.push('SAML_ENTRY_POINT is not configured');
   }
-  
+
   if (!samlConfig.issuer || samlConfig.issuer.includes('your-tenant')) {
     errors.push('SAML_ISSUER is not configured');
   }
-  
+
   if (!samlConfig.cert || samlConfig.cert.includes('YOUR_STA_CERTIFICATE')) {
     errors.push('SAML_IDP_CERT is not configured');
   }
-  
+
   if (!samlConfig.entityId || samlConfig.entityId.includes('yourdomain')) {
     errors.push('SAML_ENTITY_ID is not configured');
   }
-  
+
   if (!samlConfig.privateKey) {
     console.warn('⚠️  SAML_SP_PRIVATE_KEY is not configured. Request signing may not work.');
   }
-  
+
   if (!samlConfig.publicCert) {
     console.warn('⚠️  SAML_SP_CERT is not configured. Metadata may be incomplete.');
   }
-  
+
   return {
     valid: errors.length === 0,
     errors
