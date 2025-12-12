@@ -137,6 +137,41 @@ router.get('/login', (req, res, next) => {
 /**
  * @swagger
  * /saml/acs:
+ *   get:
+ *     summary: Error handler for GET requests to ACS
+ *     description: |
+ *       Catches GET requests to the ACS endpoint (often due to misconfigured IDP binding)
+ *       and returns a helpful error message instructing to use HTTP-POST.
+ *     tags: [SAML Authentication]
+ *     responses:
+ *       405:
+ *         description: Method Not Allowed
+ */
+router.get('/acs', (req, res) => {
+  return res.status(405).send(`
+    <html>
+      <body style="font-family: sans-serif; padding: 2rem; max-width: 600px; margin: 0 auto; text-align: center;">
+        <h1 style="color: #e74c3c;">Method Not Allowed (405)</h1>
+        <p>You tried to access the SAML ACS endpoint using <strong>HTTP-GET</strong>.</p>
+        <p>This endpoint supports only <strong>HTTP-POST</strong> binding.</p>
+        <hr />
+        <h3>Action Required:</h3>
+        <p>Please update your Identity Provider (STA) settings:</p>
+        <ul style="text-align: left; display: inline-block; margin-top: 0;">
+          <li><strong>ACS URL:</strong> ${samlConfig.callbackUrl}</li>
+          <li><strong>Binding:</strong> <span style="background-color: #f1c40f; padding: 2px 5px; border-radius: 4px;">HTTP-POST</span> (Index: 0)</li>
+        </ul>
+        <p style="margin-top: 2rem; color: #7f8c8d;">
+          <small>Metadata URL: <a href="/metadata">/metadata</a></small>
+        </p>
+      </body>
+    </html>
+  `);
+});
+
+/**
+ * @swagger
+ * /saml/acs:
  *   post:
  *     summary: SAML Assertion Consumer Service (ACS) callback
  *     description: |
