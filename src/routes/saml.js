@@ -229,14 +229,22 @@ router.post('/acs',
       // ============================================
 
       // Store SAML user in session
-      req.session.samlUser = {
+      // IMPORTANT: Mapping to structure expected by frontend and other controllers
+      req.session.user = {
         nameID: samlUser.nameID,
+        workerId: samlUser.employeeNumber, // Important: using employeeNumber as workerId
         employeeNumber: samlUser.employeeNumber,
         email: samlUser.email,
         firstName: samlUser.firstName,
         lastName: samlUser.lastName,
+        name: `${samlUser.firstName} ${samlUser.lastName || ''}`.trim(),
+        cardId: samlUser.employeeNumber, // Same as workerId for card auth
+        establishmentId: null, // This will be populated if we can link it, or handled by frontend state
         authenticatedAt: new Date().toISOString()
       };
+
+      // Also keep original for reference
+      req.session.samlUser = req.session.user;
 
       // Save session
       req.session.save((err) => {
@@ -578,18 +586,14 @@ router.post('/card-scan', async (req, res) => {
  *                   nullable: true
  */
 router.get('/status', (req, res) => {
-  const isAuthenticated = !!(req.session.samlUser && req.user);
+  // Check both Passport session and our custom session user
+  const isAuthenticated = req.isAuthenticated() || (req.session && req.session.user);
 
   if (isAuthenticated) {
-    const user = req.session.samlUser;
+    const user = req.session.user || req.user;
     return res.json({
       isAuthenticated: true,
-      user: {
-        workerId: user.employeeNumber, // Mapping employeeNumber as workerId as requested
-        name: user.firstName + (user.lastName ? ' ' + user.lastName : ''),
-        cardId: user.employeeNumber,
-        ...user
-      }
+      user: user
     });
   }
 

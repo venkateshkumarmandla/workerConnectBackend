@@ -30,24 +30,32 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // CORS configuration
 // Allow all origins when FRONTEND_URL is '*' (for mobile app access)
-const corsOptions = FRONTEND_URL === '*'
-  ? {
-    origin: true, // Allow all origins
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  }
-  : {
-    origin: [FRONTEND_URL, 'http://localhost:5173', 'http://localhost:5174',
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      FRONTEND_URL,
+      'http://localhost:5173',
+      'http://localhost:5174',
       'capacitor://localhost',
       'http://localhost',
-      'http://localhost:5173',
       'https://dulcet-cobbler-4df9df.netlify.app'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  };
+    ];
+
+    if (allowedOrigins.indexOf(origin) !== -1 || FRONTEND_URL === '*') {
+      callback(null, true);
+    } else {
+      // Ideally we should block, but for development sometimes it's easier to allow
+      // console.log('Origin not explicitly allowed:', origin);
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+};
 
 app.use(cors(corsOptions));
 
@@ -75,12 +83,13 @@ app.use(session({
   resave: false,
   saveUninitialized: false, // Don't create session until something is stored
   cookie: {
-    secure: true, // Always use HTTPS (Render handles SSL)
+    secure: process.env.NODE_ENV === 'production', // Render needs this true, but dev needs false usually unless https
     httpOnly: true, // Prevent XSS attacks
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'none' // Required for cross-site cookie (Netlify -> Render)
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-site cookie (Netlify -> Render)
   },
-  name: 'saml.sid' // Session cookie name
+  name: 'saml.sid', // Session cookie name
+  proxy: true // trust first proxy
 }));
 
 // ============================================

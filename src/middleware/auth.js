@@ -105,7 +105,7 @@ export const authorizeRole = (...allowedRoles) => {
  */
 export const verifyWorkerOwnership = (req, res, next) => {
   const workerId = parseInt(req.params.workerId || req.body.workerId);
-  
+
   if (!req.user || req.user.type !== 'worker') {
     return res.status(403).json(
       errorResponse(
@@ -134,7 +134,7 @@ export const verifyWorkerOwnership = (req, res, next) => {
  */
 export const verifyEstablishmentOwnership = (req, res, next) => {
   const establishmentId = parseInt(req.params.establishmentId || req.body.establishmentId);
-  
+
   if (!req.user || req.user.type !== 'establishment') {
     return res.status(403).json(
       errorResponse(
@@ -158,3 +158,26 @@ export const verifyEstablishmentOwnership = (req, res, next) => {
   next();
 };
 
+/**
+ * Session-based authentication middleware
+ * Checks if req.session.user exists
+ */
+export const authenticateSession = (req, res, next) => {
+  // Check if session exists and has samlUser (set in ACS)
+  // or checks req.isAuthenticated() from Passport
+  if (req.isAuthenticated() || (req.session && req.session.user)) {
+    // Ensure req.user is populated for controllers
+    if (!req.user && req.session.user) {
+      req.user = req.session.user;
+    }
+    return next();
+  }
+
+  return res.status(401).json(
+    errorResponse(
+      ERROR_CODES.AUTHENTICATION_ERROR,
+      'Session expired or invalid. Please login again.',
+      'session'
+    )
+  );
+};
