@@ -1,10 +1,10 @@
 import { supabase } from '../config/supabase.js';
 import { hashPassword, comparePassword, generateToken } from '../middleware/auth.js';
 import { successResponse, errorResponse, ERROR_CODES } from '../utils/response.js';
-import { 
-  validateEmail, 
-  validateMobileNumber, 
-  validateRequiredFields 
+import {
+  validateEmail,
+  validateMobileNumber,
+  validateRequiredFields
 } from '../utils/validation.js';
 
 /**
@@ -17,11 +17,11 @@ export const registerEstablishment = async (req, res, next) => {
 
     // Validate required fields
     const requiredFields = [
-      'establishmentName', 'contactPerson', 'mobileNumber', 
+      'establishmentName', 'contactPerson', 'mobileNumber',
       'emailId', 'categoryId', 'workNatureId', 'commencementDate'
     ];
     const missingFields = validateRequiredFields(estData, requiredFields);
-    
+
     if (missingFields.length > 0) {
       return res.status(400).json(
         errorResponse(
@@ -66,7 +66,7 @@ export const registerEstablishment = async (req, res, next) => {
       mobile_number: parseInt(estData.mobileNumber),
       email_id: estData.emailId,
       password: hashedPassword,
-      
+
       // Address
       door_number: estData.doorNumber || null,
       street: estData.street || null,
@@ -82,13 +82,13 @@ export const registerEstablishment = async (req, res, next) => {
       village_or_area_code: estData.villageOrAreaCode || null,
       village_or_area_name: estData.villageOrAreaName || null,
       pincode: parseInt(estData.pincode),
-      
+
       // Business Details
       is_plan_approval_id: estData.isPlanApprovalId || 'N',
       plan_approval_id: estData.planApprovalId || null,
       category_id: parseInt(estData.categoryId),
       work_nature_id: parseInt(estData.workNatureId),
-      
+
       // Project Details
       commencement_date: estData.commencementDate,
       completion_date: estData.completionDate || null,
@@ -98,10 +98,10 @@ export const registerEstablishment = async (req, res, next) => {
       basic_estimated_cost: parseFloat(estData.basicEstimatedCost || 0),
       no_of_male_workers: parseInt(estData.noOfMaleWorkers || 0),
       no_of_female_workers: parseInt(estData.noOfFemaleWorkers || 0),
-      
+
       // Terms
       is_accepted_terms_and_conditions: estData.isAcceptedTermsAndConditions || 'Y',
-      
+
       status: 'pending' // Admin approval required
     };
 
@@ -114,7 +114,7 @@ export const registerEstablishment = async (req, res, next) => {
 
     if (estError) {
       console.error('Establishment registration error:', estError);
-      
+
       if (estError.code === '23505') {
         return res.status(400).json(
           errorResponse(
@@ -124,7 +124,7 @@ export const registerEstablishment = async (req, res, next) => {
           )
         );
       }
-      
+
       throw estError;
     }
 
@@ -214,6 +214,17 @@ export const loginEstablishment = async (req, res, next) => {
       mobileNumber: establishment.mobile_number
     });
 
+    // Create Session for Unified Access
+    req.session.user = {
+      role: 'establishment',
+      establishmentId: establishment.establishment_id,
+      name: establishment.establishment_name,
+      email: establishment.email_id,
+      contactPerson: establishment.contact_person,
+      mobileNumber: establishment.mobile_number,
+      authenticatedAt: new Date().toISOString()
+    };
+
     // Response data
     const responseData = {
       establishmentId: establishment.establishment_id,
@@ -261,7 +272,7 @@ export const getEstablishmentCardDetails = async (req, res, next) => {
 
     // Get today's attendance
     const today = new Date().toISOString().split('T')[0];
-    
+
     const { count: presentToday } = await supabase
       .from('attendance')
       .select('*', { count: 'exact', head: true })
@@ -305,9 +316,15 @@ export const getEstablishmentCardDetails = async (req, res, next) => {
  */
 export const getWorkerDetailsByEstablishment = async (req, res, next) => {
   try {
-    const { establishmentId } = req.query;
+    // Determine establishmentId:
+    // 1. From query (admin/department override)
+    // 2. From session (establishment user)
+    // 3. Fallback to query
+    let targetEstablishmentId = establishmentId;
 
-    if (!establishmentId) {
+    if (req.session.user && req.session.user.role === 'establishment') {
+      targetEstablishmentId = req.session.user.establishmentId;
+    } else if (!targetEstablishmentId) {
       return res.status(400).json(
         errorResponse(
           ERROR_CODES.VALIDATION_ERROR,
@@ -333,7 +350,7 @@ export const getWorkerDetailsByEstablishment = async (req, res, next) => {
           status
         )
       `)
-      .eq('establishment_id', establishmentId);
+      .eq('establishment_id', targetEstablishmentId);
 
     if (error) throw error;
 

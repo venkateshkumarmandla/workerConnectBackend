@@ -197,6 +197,17 @@ export const loginDepartment = async (req, res, next) => {
       roleName: deptUser.department_role.role_name
     });
 
+    // Create Session for Unified Access
+    req.session.user = {
+      role: 'department',
+      departmentUserId: deptUser.department_user_id,
+      name: `${deptUser.first_name} ${deptUser.last_name || ''}`.trim(),
+      email: deptUser.email_id,
+      contactNumber: deptUser.contact_number,
+      departmentRoleId: deptUser.department_role_id,
+      authenticatedAt: new Date().toISOString()
+    };
+
     // ✅ Final response
     const responseData = {
       departmentRoleId: deptUser.department_role_id,
@@ -257,7 +268,7 @@ export const getDepartmentCardDetails = async (req, res, next) => {
     // New workers in establishment_worker table (last 7 days)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
+
     const { count: newEstablishmentWorkers } = await supabase
       .from('establishment_worker')
       .select('*', { count: 'exact', head: true })
@@ -337,7 +348,7 @@ export const getAllWorkers = async (req, res, next) => {
       query = query.eq('status', status);
     }
 
-    const { data: workers, error} = await query;
+    const { data: workers, error } = await query;
 
     if (error) throw error;
 

@@ -162,14 +162,22 @@ export const verifyEstablishmentOwnership = (req, res, next) => {
  * Session-based authentication middleware
  * Checks if req.session.user exists
  */
+/**
+ * Session-based authentication middleware
+ * Checks if req.session.user exists
+ */
 export const authenticateSession = (req, res, next) => {
-  // Check if session exists and has samlUser (set in ACS)
-  // or checks req.isAuthenticated() from Passport
-  if (req.isAuthenticated() || (req.session && req.session.user)) {
-    // Ensure req.user is populated for controllers
-    if (!req.user && req.session.user) {
-      req.user = req.session.user;
-    }
+  // Check if session exists and has samlUser (set in ACS) or login user
+  // or checks req.isAuthenticated() from Passport if used
+
+  if (req.session && req.session.user) {
+    // Populate req.user for downstream controllers
+    req.user = req.session.user;
+    return next();
+  }
+
+  // Also check passport session if available
+  if (req.isAuthenticated()) {
     return next();
   }
 
@@ -181,3 +189,5 @@ export const authenticateSession = (req, res, next) => {
     )
   );
 };
+
+

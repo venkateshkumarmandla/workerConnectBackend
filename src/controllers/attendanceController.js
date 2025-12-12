@@ -245,82 +245,99 @@ export const getCurrentlyCheckedInWorkers = async (req, res, next) => {
  * Get today's attendance
  * GET /api/attendance/today
  */
+/**
+ * Get today's attendance
+ * GET /api/attendance/today
+ */
 export const getTodayAttendance = async (req, res, next) => {
   try {
-    const { establishmentId } = req.query;
+    const user = req.user;
     const today = new Date().toISOString().split('T')[0];
-    const userRole = req.user?.role;
-    const userEstablishmentId = req.user?.establishmentId;
+
+    // Determine scope based on role
+    let establishmentId = null;
+    let workerId = null;
+
+    if (user.role === 'worker') {
+      workerId = user.workerId || user.id;
+    } else if (user.role === 'establishment') {
+      establishmentId = user.establishmentId;
+    } else if (user.role === 'department') {
+      if (req.query.establishmentId) {
+        establishmentId = req.query.establishmentId;
+      }
+    }
 
     let query = supabase
       .from('attendance')
       .select(`
         *,
-        worker:worker_id (
-          worker_id,
-          full_name,
-          mobile_number
-        ),
-        establishment:establishment_id (
-          establishment_id,
-          establishment_name
-        )
+        worker:worker_id (full_name, worker_id),
+        establishment:establishment_id (establishment_name)
       `)
       .gte('check_in_date_time', `${today}T00:00:00`)
       .order('check_in_date_time', { ascending: false });
 
-    // Filter by establishment if provided or enforced by role
     if (establishmentId) {
       query = query.eq('establishment_id', establishmentId);
-    } else if (userRole === 'establishment_admin' && userEstablishmentId) {
-      query = query.eq('establishment_id', userEstablishmentId);
     }
 
-    const { data: attendance, error } = await query;
+    if (workerId) {
+      query = query.eq('worker_id', workerId);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    res.json(successResponse({
-      data: attendance || [],
-      date: today
-    }));
-
+    res.json(successResponse(data || []));
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Get current checked-in count
+ * Get count of currently checked-in workers
  * GET /api/attendance/current/count
  */
 export const getCurrentCount = async (req, res, next) => {
   try {
-    const { establishmentId } = req.query;
-    const userRole = req.user?.role;
-    const userEstablishmentId = req.user?.establishmentId;
+    const user = req.user;
+
+    // Determine scope based on role
+    let establishmentId = null;
+    let workerId = null;
+
+    if (user.role === 'worker') {
+      workerId = user.workerId || user.id;
+    } else if (user.role === 'establishment') {
+      establishmentId = user.establishmentId;
+    } else if (user.role === 'department') {
+      // Department can see all, or filter by query param
+      if (req.query.establishmentId) {
+        establishmentId = req.query.establishmentId;
+      }
+    }
 
     let query = supabase
       .from('attendance')
-      .select('*', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true }) // count only
       .eq('status', 'i')
       .is('check_out_date_time', null);
 
-    // Filter by establishment if provided or enforced by role
     if (establishmentId) {
       query = query.eq('establishment_id', establishmentId);
-    } else if (userRole === 'establishment_admin' && userEstablishmentId) {
-      query = query.eq('establishment_id', userEstablishmentId);
+    }
+
+    if (workerId) {
+      query = query.eq('worker_id', workerId);
     }
 
     const { count, error } = await query;
 
     if (error) throw error;
 
-    res.json(successResponse({
-      count: count || 0
-    }));
-
+    res.json(successResponse({ count: count || 0 }));
   } catch (error) {
     next(error);
   }

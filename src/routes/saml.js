@@ -240,6 +240,7 @@ router.post('/acs',
         name: `${samlUser.firstName} ${samlUser.lastName || ''}`.trim(),
         cardId: samlUser.employeeNumber, // Same as workerId for card auth
         establishmentId: null, // This will be populated if we can link it, or handled by frontend state
+        role: 'worker', // EXPLICIT ROLE
         authenticatedAt: new Date().toISOString()
       };
 
