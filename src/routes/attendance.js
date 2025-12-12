@@ -1,9 +1,11 @@
 import express from 'express';
-import { 
+import {
   checkInOrOut,
   getWorkerAttendance,
   getEstablishmentAttendance,
-  getCurrentlyCheckedInWorkers
+  getCurrentlyCheckedInWorkers,
+  getTodayAttendance,
+  getCurrentCount
 } from '../controllers/attendanceController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -17,6 +19,8 @@ router.post('/checkinorout', asyncHandler(checkInOrOut));
 router.get('/worker/:workerId', authenticateToken, asyncHandler(getWorkerAttendance));
 router.get('/establishment/:establishmentId', authenticateToken, asyncHandler(getEstablishmentAttendance));
 router.get('/current', authenticateToken, asyncHandler(getCurrentlyCheckedInWorkers));
+router.get('/current/count', authenticateToken, asyncHandler(getCurrentCount));
+router.get('/today', authenticateToken, asyncHandler(getTodayAttendance));
 
 export default router;
 

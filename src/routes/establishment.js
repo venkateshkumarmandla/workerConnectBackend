@@ -1,6 +1,6 @@
 import express from 'express';
-import { 
-  registerEstablishment, 
+import {
+  registerEstablishment,
   loginEstablishment,
   getEstablishmentCardDetails,
   getWorkerDetailsByEstablishment,
@@ -19,6 +19,7 @@ router.post('/login', asyncHandler(loginEstablishment));
 // Protected routes
 router.get('/dashboard/carddetails', asyncHandler(getEstablishmentCardDetails));
 router.get('/workerdetails', asyncHandler(getWorkerDetailsByEstablishment));
+router.get('/workers', asyncHandler(getWorkerDetailsByEstablishment)); // Alias for consistency
 router.post('/persistworkerdetailsbyestablishment', authenticateToken, asyncHandler(persistWorkerDetails));
 router.get('/availableaadhaarcarddetails', authenticateToken, asyncHandler(getAvailableAadhaarCardDetails));
 
