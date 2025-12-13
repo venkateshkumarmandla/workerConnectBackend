@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { validateSamlConfig } from './config/saml.js';
 
 // Import routes
+import authRoutes from './routes/auth.js';
 import workerRoutes from './routes/worker.js';
 import establishmentRoutes from './routes/establishment.js';
 import departmentRoutes from './routes/department.js';
@@ -214,6 +215,7 @@ app.get('/metadata', handleMetadata);
 // ============================================
 
 // API routes with /api prefix to match frontend
+app.use('/api/auth', authRoutes);
 app.use('/api/worker', workerRoutes);
 app.use('/api/establishment', establishmentRoutes);
 app.use('/api/department', departmentRoutes);
