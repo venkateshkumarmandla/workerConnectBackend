@@ -57,9 +57,21 @@ export const samlConfig = {
   // This is the public certificate from SafeNet Trusted Access
   // You can get this from STA metadata or download it from STA console
   // It's used to verify SAML responses are from STA
-  cert: process.env.SAML_IDP_CERT || `-----BEGIN CERTIFICATE-----
-MIICqzCCAZMCBgGWSJt8fjANBgkqhkiG9w0BAQsFADAZMRcwFQYDVQQDDA4yVVVPMTRQSjFHLVNUQTAeFw0yNTA0MTgxMTEyNTFaFw0zNTA0MTgxMTE0MzFaMBkxFzAVBgNVBAMMDjJVVU8xNFBKMUctU1RBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6Xz+jVxL6AwLRHQgTKiBhabhubBBKKQK1mdP5EtNuR/MVo4BtskEZDTUbzvVvvPqB8ufUIxUUu3zgxp3z8FHc1b6i9I82knC2BTPupWOMr52wh3Onhp3F/lhK4RzTE88sMlwmnkMMUavrQKAkwtsuXNQdwKRQlpuwfdPRujH8ZoCCafOo9c1MLCHNZvbe4uiaK8UQJKJaiZ4gQ8Ss6upDbacQWJcY5IrIzeB3hRDqKAnt2zYMs/V42QULzpHU1sDkjicFNdPxdGjnHkeEi6YQORBywc2+llM7Jv0zVrBbrpBF3/ZJjfszepM76ZG8tMBtfiU3xzwKUTfMNFdJnOT6QIDAQABMA0GCSqGSIb3DQEBCwUAA4IBAQBmqkcsmgghXk1Yq6ASW9SVDRApkCepm8z69AkF/myUVJAMNgzKmEAq6nTd7kI84Z0J3lqoyrYSv7HNUhmwvPWBU5g2sLmqlNQU7cH0DAO3yHv5Q/aplI8ZBN1vpEyCNQcs7CyHNRcp6yhnfHq5dHtQAjyarlmfDgqi/KItlmCtCnn0iViv3ccIpXRK5hbHXCAid2rqf7qpmv9n3nrvQ5U9s7aKDz6qIs6DWK4JQcVbbZ4aB27/8J92GKUE0ifBUkPN9Vkkul52Q2fBcQls1o6QLUzUUnIaKKQMIBMBB3SQAkMfbwbXuKDHVWRLqbDtzRYKHZP3t2G8KLhk6LfUbTmO
------END CERTIFICATE-----`,
+  // STA Certificate
+  // This is the public certificate from SafeNet Trusted Access
+  // We read it from the certs/idp.crt file
+  cert: process.env.SAML_IDP_CERT || (() => {
+    try {
+      const certPath = path.join(__dirname, '../../certs/idp.crt');
+      if (fs.existsSync(certPath)) {
+        return fs.readFileSync(certPath, 'utf8');
+      }
+    } catch (error) {
+      console.warn('⚠️  SAML IDP certificate file not found. Using fallback.');
+    }
+    // Fallback or placeholder - but file is preferred
+    return null;
+  })(),
 
   // ============================================
   // CERTIFICATE CONFIGURATION

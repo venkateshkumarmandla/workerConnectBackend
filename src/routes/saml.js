@@ -125,49 +125,204 @@ router.get('/login', (req, res, next) => {
     console.log('🔐 Starting SAML login (manual)');
   }
 
+  // Default to worker if no specific role is requested
+  req.session.loginRole = 'worker';
+
   // Initiate SAML authentication
   // Passport will redirect to STA entry point
   passport.authenticate('saml', {
-    // Additional parameters can be passed here
-    // For example, to force re-authentication:
-    // additionalParams: { ForceAuthn: 'true' }
+    failureRedirect: '/login',
+    failureFlash: true,
   })(req, res, next);
 });
+
+/**
+ * Shared ACS Handler Logic
+ * Used for both POST (standard) and GET (proxy) flows
+ */
+const acsHandler = async (req, res) => {
+  try {
+    // After successful SAML authentication, req.user contains the user profile
+    const samlUser = req.user;
+    const pendingCardId = req.session.pendingCardId;
+
+    console.log('✅ SAML authentication successful');
+    console.log('👤 User:', {
+      nameID: samlUser.nameID,
+      employeeNumber: samlUser.employeeNumber
+    });
+
+    // ============================================
+    // CARD ID VALIDATION
+    // ============================================
+
+    // If there's a pending card scan, validate the cardId
+    if (pendingCardId) {
+      console.log(`🔍 Validating card scan: ${pendingCardId}`);
+
+      // Extract the identifier from SAML response
+      // This could be NameID or employeeNumber attribute
+      const userIdentifier = samlUser.employeeNumber || samlUser.nameID;
+
+      // Validate that the STA user matches the scanned card
+      if (userIdentifier !== pendingCardId) {
+        console.error('❌ Card ID mismatch!');
+        console.error(`   Scanned card: ${pendingCardId}`);
+        console.error(`   STA user: ${userIdentifier}`);
+
+        // Clear session and deny access
+        clearSamlSession(req);
+        req.logout((err) => {
+          if (err) console.error('Logout error:', err);
+        });
+
+        return res.status(403).json(
+          errorResponse(
+            ERROR_CODES.AUTHORIZATION_ERROR,
+            'Card ID does not match authenticated user. Access denied.',
+            'cardValidation'
+          )
+        );
+      }
+
+      console.log('✅ Card ID validated successfully');
+
+      // Clear pending cardId from session
+      delete req.session.pendingCardId;
+    }
+
+    // ============================================
+    // SESSION MANAGEMENT
+    // ============================================
+
+    // Store SAML user in session
+    // IMPORTANT: Mapping to structure expected by frontend and other controllers
+    req.session.user = {
+      nameID: samlUser.nameID,
+      workerId: samlUser.employeeNumber, // Important: using employeeNumber as workerId
+      employeeNumber: samlUser.employeeNumber,
+      email: samlUser.email,
+      firstName: samlUser.firstName,
+      lastName: samlUser.lastName,
+      name: `${samlUser.firstName} ${samlUser.lastName || ''}`.trim(),
+      cardId: samlUser.employeeNumber, // Same as workerId for card auth
+      establishmentId: null, // This will be populated if we can link it, or handled by frontend state
+      role: req.session.loginRole || 'worker', // Use intended role or default to worker
+    };
+
+    console.log(`✅ [SAML] Session created for ${samlUser.email} as ${req.session.user.role}`);
+
+    // --- 5. REDIRECT TO DASHBOARD ---
+    // Save session before redirecting
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Session save error:', err);
+        return res.status(500).send('Session save error');
+      }
+
+      const targetRole = req.session.user.role;
+      let redirectUrl = '/dashboard/worker'; // Default
+
+      if (targetRole === 'establishment') {
+        redirectUrl = '/dashboard/establishment';
+      }
+
+      console.log(`🚀 Redirecting to: ${redirectUrl}`);
+
+      const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+      return res.redirect(`${frontendUrl}${redirectUrl}`);
+    });
+  } catch (error) {
+    console.error('❌ Error in SAML ACS callback:', error);
+    clearSamlSession(req);
+
+    res.status(500).json(
+      errorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        'SAML authentication failed',
+        'saml'
+      )
+    );
+  }
+};
 
 /**
  * @swagger
  * /saml/acs:
  *   get:
- *     summary: Error handler for GET requests to ACS
+ *     summary: Internal Proxy for ACS (GET -> POST)
  *     description: |
- *       Catches GET requests to the ACS endpoint (often due to misconfigured IDP binding)
- *       and returns a helpful error message instructing to use HTTP-POST.
+ *       Handles GET requests from STA (misconfigured Redirect binding) by transforming
+ *       them into POST requests internally. This allows the backend to accept the
+ *       SAMLResponse from the query string and process it securely as if it were a POST.
  *     tags: [SAML Authentication]
- *     responses:
- *       405:
- *         description: Method Not Allowed
  */
-router.get('/acs', (req, res) => {
-  return res.status(405).send(`
-    <html>
-      <body style="font-family: sans-serif; padding: 2rem; max-width: 600px; margin: 0 auto; text-align: center;">
-        <h1 style="color: #e74c3c;">Method Not Allowed (405)</h1>
-        <p>You tried to access the SAML ACS endpoint using <strong>HTTP-GET</strong>.</p>
-        <p>This endpoint supports only <strong>HTTP-POST</strong> binding.</p>
-        <hr />
-        <h3>Action Required:</h3>
-        <p>Please update your Identity Provider (STA) settings:</p>
-        <ul style="text-align: left; display: inline-block; margin-top: 0;">
-          <li><strong>ACS URL:</strong> ${samlConfig.callbackUrl}</li>
-          <li><strong>Binding:</strong> <span style="background-color: #f1c40f; padding: 2px 5px; border-radius: 4px;">HTTP-POST</span> (Index: 0)</li>
-        </ul>
-        <p style="margin-top: 2rem; color: #7f8c8d;">
-          <small>Metadata URL: <a href="/metadata">/metadata</a></small>
-        </p>
-      </body>
-    </html>
-  `);
-});
+// GET Handler (Proxy Logic)
+router.get('/acs', (req, res, next) => {
+  if (req.query.SAMLResponse) {
+    console.log('🔄 [Proxy] Transforming GET SAMLResponse to POST format');
+
+    // Inject into body
+    req.body = req.body || {};
+    req.body.SAMLResponse = req.query.SAMLResponse;
+    if (req.query.RelayState) {
+      req.body.RelayState = req.query.RelayState;
+    }
+
+    // Spoof method for passport-saml
+    req.method = 'POST';
+
+    // Continue to auth logic
+    return next();
+  }
+
+  // Fallback if no SAMLResponse
+  return res.status(400).send('SAMLResponse missing in GET request');
+},
+  // Chain standard authentication
+  passport.authenticate('saml', {
+    failureRedirect: '/login',
+    failureFlash: false
+  }),
+  // Use the shared ACS logic
+  acsHandler);
+
+// --- 1. LOGIN ROUTES ---
+
+// Standard Login -> See line 118 for the main /login handler
+// (We removed the duplicate here)
+
+// Worker Specific Login (Forces Auth)
+router.get('/login/worker',
+  (req, res, next) => {
+    req.session.loginRole = 'worker'; // Set intent
+    console.log('🔒 Initiating Forced Worker Login');
+    next();
+  },
+  passport.authenticate('saml', {
+    failureRedirect: '/login',
+    failureFlash: true,
+    additionalParams: {
+      'ForceAuthn': 'true'
+    }
+  })
+);
+
+// Establishment Specific Login (Forces Auth)
+router.get('/login/establishment',
+  (req, res, next) => {
+    req.session.loginRole = 'establishment'; // Set intent
+    console.log('🏢 Initiating Forced Establishment Login');
+    next();
+  },
+  passport.authenticate('saml', {
+    failureRedirect: '/login',
+    failureFlash: true,
+    additionalParams: {
+      'ForceAuthn': 'true'
+    }
+  })
+);
 
 /**
  * @swagger
@@ -208,121 +363,7 @@ router.post('/acs',
     failureRedirect: '/login',
     failureFlash: false
   }),
-  async (req, res) => {
-    try {
-      // After successful SAML authentication, req.user contains the user profile
-      const samlUser = req.user;
-      const pendingCardId = req.session.pendingCardId;
-
-      console.log('✅ SAML authentication successful');
-      console.log('👤 User:', {
-        nameID: samlUser.nameID,
-        employeeNumber: samlUser.employeeNumber
-      });
-
-      // ============================================
-      // CARD ID VALIDATION
-      // ============================================
-
-      // If there's a pending card scan, validate the cardId
-      if (pendingCardId) {
-        console.log(`🔍 Validating card scan: ${pendingCardId}`);
-
-        // Extract the identifier from SAML response
-        // This could be NameID or employeeNumber attribute
-        const userIdentifier = samlUser.employeeNumber || samlUser.nameID;
-
-        // Validate that the STA user matches the scanned card
-        if (userIdentifier !== pendingCardId) {
-          console.error('❌ Card ID mismatch!');
-          console.error(`   Scanned card: ${pendingCardId}`);
-          console.error(`   STA user: ${userIdentifier}`);
-
-          // Clear session and deny access
-          clearSamlSession(req);
-          req.logout((err) => {
-            if (err) console.error('Logout error:', err);
-          });
-
-          return res.status(403).json(
-            errorResponse(
-              ERROR_CODES.AUTHORIZATION_ERROR,
-              'Card ID does not match authenticated user. Access denied.',
-              'cardValidation'
-            )
-          );
-        }
-
-        console.log('✅ Card ID validated successfully');
-
-        // Clear pending cardId from session
-        delete req.session.pendingCardId;
-      }
-
-      // ============================================
-      // SESSION MANAGEMENT
-      // ============================================
-
-      // Store SAML user in session
-      // IMPORTANT: Mapping to structure expected by frontend and other controllers
-      req.session.user = {
-        nameID: samlUser.nameID,
-        workerId: samlUser.employeeNumber, // Important: using employeeNumber as workerId
-        employeeNumber: samlUser.employeeNumber,
-        email: samlUser.email,
-        firstName: samlUser.firstName,
-        lastName: samlUser.lastName,
-        name: `${samlUser.firstName} ${samlUser.lastName || ''}`.trim(),
-        cardId: samlUser.employeeNumber, // Same as workerId for card auth
-        establishmentId: null, // This will be populated if we can link it, or handled by frontend state
-        role: 'worker', // EXPLICIT ROLE
-        authenticatedAt: new Date().toISOString()
-      };
-
-      // Also keep original for reference
-      req.session.samlUser = req.session.user;
-
-      // Save session
-      req.session.save((err) => {
-        if (err) {
-          console.error('❌ Session save error:', err);
-          return res.status(500).json(
-            errorResponse(
-              ERROR_CODES.INTERNAL_ERROR,
-              'Failed to save session',
-              'session'
-            )
-          );
-        }
-
-        console.log('✅ Session saved successfully');
-
-        // Redirect to dashboard after successful authentication
-        // Return JSON with redirect URL if requested (for SPA)
-        if (req.headers['content-type']?.includes('application/json')) {
-          return res.json({
-            redirectUrl: "https://dulcet-cobbler-4df9df.netlify.app/dashboard/worker"
-          });
-        }
-
-        // HTML redirect (for browser-based flows - standard SAML flow)
-        // Redirecting to the frontend application
-        res.redirect("https://dulcet-cobbler-4df9df.netlify.app/dashboard/worker");
-      });
-
-    } catch (error) {
-      console.error('❌ Error in SAML ACS callback:', error);
-      clearSamlSession(req);
-
-      res.status(500).json(
-        errorResponse(
-          ERROR_CODES.INTERNAL_ERROR,
-          'SAML authentication failed',
-          'saml'
-        )
-      );
-    }
-  }
+  acsHandler
 );
 
 /**
