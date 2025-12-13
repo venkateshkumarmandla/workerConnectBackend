@@ -171,7 +171,8 @@ export const samlConfig = {
     return {
       // Service Provider configuration
       entryPoint: this.entryPoint,
-      issuer: this.issuer,
+      // IMPORTANT: 'issuer' in passport-saml is the SP's entityID, NOT the IDP's issuer!
+      issuer: this.entityId,  // This is YOUR SP's identifier
       callbackUrl: this.callbackUrl,
       logoutUrl: this.logoutUrl,
       cert: this.cert,
