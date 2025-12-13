@@ -472,9 +472,12 @@ router.get('/', (req, res) => {
 function handleMetadata(req, res) {
   try {
     // Generate SP metadata using passport-saml
+    // IMPORTANT: Do NOT pass the private key here - only public certificate
+    // The signature is: generateServiceProviderMetadata(decryptionCert, signingCert)
+    // Both should be PUBLIC certificates, never private keys
     const metadata = samlStrategy.generateServiceProviderMetadata(
-      samlConfig.publicCert,  // SP certificate
-      samlConfig.privateKey   // SP private key (for signing)
+      samlConfig.publicCert,  // Decryption certificate (public)
+      samlConfig.publicCert   // Signing certificate (public) - same cert for both
     );
 
     // Set content type to XML
