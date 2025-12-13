@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAML Login Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .button.secondary {
+            background: #6c757d;
+        }
+        .button.secondary:hover {
+            background: #545b62;
+        }
+        .button.success {
+            background: #28a745;
+        }
+        .button.success:hover {
+            background: #218838;
+        }
+        .info {
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔐 SAML Login Test</h1>
+        <p>Test the new role-specific login routes with ForceAuthn</p>
+        
+        <div class="info">
+            <strong>Expected behavior:</strong> Each button should redirect you to the STA login page, even if you already have an active session.
+        </div>
+
+        <a href="/saml/login/worker" class="button">
+            👷 Login as Worker (Force Auth)
+        </a>
+
+        <a href="/saml/login/establishment" class="button success">
+            🏢 Login as Establishment (Force Auth)
+        </a>
+
+        <a href="/saml/login" class="button secondary">
+            🔓 Default Login (SSO Enabled)
+        </a>
+
+        <div class="info" style="margin-top: 30px;">
+            <strong>Debug Info:</strong><br>
+            Server: <span id="server"></span><br>
+            <a href="/saml/status" target="_blank">Check Auth Status</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('server').textContent = window.location.origin;
+    </script>
+</body>
+</html>
