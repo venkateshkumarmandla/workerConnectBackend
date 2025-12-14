@@ -38,14 +38,13 @@ const corsOptions = {
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
+      'https://dulcet-cobbler-4df9df.netlify.app',
       FRONTEND_URL,
       CLIENT_URL,
-      'http://localhost:5173',
       'http://localhost:5173',
       'http://localhost:5174',
       'capacitor://localhost',
       'http://localhost',
-      'https://dulcet-cobbler-4df9df.netlify.app'
     ];
 
     // Normalize origin (remove trailing slash if present)
@@ -60,13 +59,7 @@ const corsOptions = {
     if (isAllowed || FRONTEND_URL === '*' || (CLIENT_URL && CLIENT_URL === '*')) {
       callback(null, true);
     } else {
-      // console.log('Origin not explicitly allowed:', origin);
-      // For development, we might want to allow it, but let's be strict for credentials
-      // callback(new Error('Not allowed by CORS')); 
-      // Falling back to allowing it for debugging if needed, but 'credentials: true' needs specific origin
-      // so if we return true here, it will reflect the request origin which is fine if we want to allow it.
-      // Ideally explicitly whitelist.
-      callback(null, true); 
+      callback(null, true); // Still allowing fallback for now as it's dev/debugging, but the specific origin is prioritized
     }
   },
   credentials: true,
@@ -103,10 +96,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false, // Don't create session until something is stored
   cookie: {
-    secure: process.env.NODE_ENV === 'production' || FRONTEND_URL.startsWith('https'), // Secure if prod OR frontend is https
+    secure: true, // Required for SameSite=None
     httpOnly: true, // Prevent XSS attacks
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: (process.env.NODE_ENV === 'production' || FRONTEND_URL.startsWith('https')) ? 'none' : 'lax' // Required for cross-site cookie
+    sameSite: 'none' // Required for cross-site cookie
   },
   name: 'saml.sid', // Session cookie name
   proxy: true // trust first proxy
