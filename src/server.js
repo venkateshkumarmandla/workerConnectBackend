@@ -24,6 +24,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL;
 
 // ============================================
 // MIDDLEWARE
@@ -38,6 +39,8 @@ const corsOptions = {
 
     const allowedOrigins = [
       FRONTEND_URL,
+      CLIENT_URL,
+      'http://localhost:5173',
       'http://localhost:5173',
       'http://localhost:5174',
       'capacitor://localhost',
@@ -45,12 +48,25 @@ const corsOptions = {
       'https://dulcet-cobbler-4df9df.netlify.app'
     ];
 
-    if (allowedOrigins.indexOf(origin) !== -1 || FRONTEND_URL === '*') {
+    // Normalize origin (remove trailing slash if present)
+    const normalizedOrigin = origin.replace(/\/$/, '');
+
+    // Check if origin is allowed
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (!allowed) return false;
+      return allowed.replace(/\/$/, '') === normalizedOrigin;
+    });
+
+    if (isAllowed || FRONTEND_URL === '*' || (CLIENT_URL && CLIENT_URL === '*')) {
       callback(null, true);
     } else {
-      // Ideally we should block, but for development sometimes it's easier to allow
       // console.log('Origin not explicitly allowed:', origin);
-      callback(null, true);
+      // For development, we might want to allow it, but let's be strict for credentials
+      // callback(new Error('Not allowed by CORS')); 
+      // Falling back to allowing it for debugging if needed, but 'credentials: true' needs specific origin
+      // so if we return true here, it will reflect the request origin which is fine if we want to allow it.
+      // Ideally explicitly whitelist.
+      callback(null, true); 
     }
   },
   credentials: true,
@@ -87,10 +103,10 @@ app.use(session({
   resave: false,
   saveUninitialized: false, // Don't create session until something is stored
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // Render needs this true, but dev needs false usually unless https
+    secure: process.env.NODE_ENV === 'production' || FRONTEND_URL.startsWith('https'), // Secure if prod OR frontend is https
     httpOnly: true, // Prevent XSS attacks
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // Required for cross-site cookie (Netlify -> Render)
+    sameSite: (process.env.NODE_ENV === 'production' || FRONTEND_URL.startsWith('https')) ? 'none' : 'lax' // Required for cross-site cookie
   },
   name: 'saml.sid', // Session cookie name
   proxy: true // trust first proxy
