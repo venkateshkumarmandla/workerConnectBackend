@@ -132,19 +132,53 @@ app.set('trust proxy', 1);
  * - Tracking pending card scans
  * - Maintaining authentication state
  */
+
+/**
+ * Get dynamic cookie settings based on environment
+ * This ensures cookies work in both production (HTTPS) and mobile apps (HTTP localhost)
+ */
+const getSessionCookieConfig = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction) {
+    // Production: Secure cookies for HTTPS cross-origin (web browsers)
+    return {
+      secure: true,           // Require HTTPS
+      httpOnly: true,         // Prevent XSS
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'none',       // Allow cross-origin for SAML
+    };
+  } else {
+    // Development: Relaxed cookies for HTTP localhost (mobile apps)
+    return {
+      secure: false,          // Allow HTTP for localhost
+      httpOnly: true,         // Prevent XSS
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax',        // Relaxed same-site for mobile
+    };
+  }
+};
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
   resave: false,
   saveUninitialized: false, // Don't create session until something is stored
-  cookie: {
-    secure: true, // Required for SameSite=None
-    httpOnly: true, // Prevent XSS attacks
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'none' // Required for cross-site cookie
-  },
+  cookie: getSessionCookieConfig(),
   name: 'saml.sid', // Session cookie name
   proxy: true // trust first proxy
 }));
+
+// Session debugging middleware
+app.use((req, res, next) => {
+  // Log session info for auth-related requests
+  if (req.path.includes('/api/auth') || req.path.includes('/saml')) {
+    console.log(`📊 [Session] ${req.method} ${req.path}`);
+    console.log(`📊 [Session] Has Session: ${!!req.session}, ID: ${req.sessionID}`);
+    console.log(`📊 [Session] Has User: ${!!(req.session && req.session.user)}`);
+    console.log(`📊 [Session] Cookie Header: ${req.headers.cookie ? 'Present' : 'Missing'}`);
+  }
+  next();
+});
 
 // ============================================
 // PASSPORT INITIALIZATION
