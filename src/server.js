@@ -161,9 +161,14 @@ app.set('trust proxy', 1);
  * This ensures cookies work in both production (HTTPS) and mobile apps (HTTP localhost)
  */
 const getSessionCookieConfig = () => {
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Check if running in production or on Render
+  // Render sets environment variables like RENDER=true
+  const isProduction = process.env.NODE_ENV === 'production' ||
+    process.env.RENDER === 'true' ||
+    process.env.ON_RENDER === 'true';
 
   if (isProduction) {
+    console.log('🍪 Using PRODUCTION cookie settings (Secure, SameSite=None)');
     // Production: Secure cookies for HTTPS cross-origin (web browsers)
     return {
       secure: true,           // Require HTTPS
@@ -172,6 +177,7 @@ const getSessionCookieConfig = () => {
       sameSite: 'none',       // Allow cross-origin for SAML
     };
   } else {
+    console.log('🍪 Using DEVELOPMENT cookie settings (Not Secure, SameSite=Lax)');
     // Development: Relaxed cookies for HTTP localhost (mobile apps)
     return {
       secure: false,          // Allow HTTP for localhost
