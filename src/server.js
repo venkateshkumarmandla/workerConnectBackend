@@ -93,6 +93,8 @@ const corsOptions = {
     'Origin',
     'X-App-Platform',      // Custom header for mobile app detection
     'X-Client-Type',       // Custom header for client type
+    'X-App-Origin',        // ✅ Added: Custom header seen in logs
+    'X-Device-Platform',   // ✅ Added: Custom header seen in logs
     'Cookie',
     'Set-Cookie'
   ],
@@ -115,6 +117,7 @@ app.use(express.static('public'));
 
 // Handle OPTIONS requests for CORS preflight
 // This ensures mobile apps can complete preflight checks
+// Explicitly using the same corsOptions to ensure consistency
 app.options('*', cors(corsOptions));
 
 // ============================================
