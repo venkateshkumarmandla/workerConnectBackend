@@ -8,6 +8,7 @@ import { swaggerSpec } from './config/swagger.js';
 import { testConnection } from './config/supabase.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { validateSamlConfig } from './config/saml.js';
+import signature from 'cookie-signature';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -95,6 +96,7 @@ const corsOptions = {
     'X-Client-Type',       // Custom header for client type
     'X-App-Origin',        // ✅ Added: Custom header seen in logs
     'X-Device-Platform',   // ✅ Added: Custom header seen in logs
+    'X-Session-Token',     // ✅ Added: For header-based session support
     'Cookie',
     'Set-Cookie'
   ],
@@ -110,6 +112,24 @@ app.use(express.urlencoded({ extended: true }));
 
 // Serve static files from public directory
 app.use(express.static('public'));
+
+// ============================================
+// SESSION TOKEN SUPPORT (Mobile Fix)
+// ============================================
+
+/**
+ * Middleware to support header-based sessions for mobile apps
+ * If cookie is missing but X-Session-Token header exists, inject it as cookie
+ */
+app.use((req, res, next) => {
+  if (!req.headers.cookie && req.headers['x-session-token']) {
+    const token = req.headers['x-session-token'];
+    // Reconstruct cookie string: saml.sid=<token>
+    req.headers.cookie = `saml.sid=${token}`;
+    console.log(`📱 [Mobile Session] Injected cookie from X-Session-Token header`);
+  }
+  next();
+});
 
 // ============================================
 // PREFLIGHT REQUESTS HANDLER
@@ -149,7 +169,7 @@ const getSessionCookieConfig = () => {
       secure: true,           // Require HTTPS
       httpOnly: true,         // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'none',       // Allow cross-origin for SAML
+      sameSite: 'true',       // Allow cross-origin for SAML
     };
   } else {
     // Development: Relaxed cookies for HTTP localhost (mobile apps)
