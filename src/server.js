@@ -169,7 +169,7 @@ const getSessionCookieConfig = () => {
       secure: true,           // Require HTTPS
       httpOnly: true,         // Prevent XSS
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'true',       // Allow cross-origin for SAML
+      sameSite: 'none',       // Allow cross-origin for SAML
     };
   } else {
     // Development: Relaxed cookies for HTTP localhost (mobile apps)
