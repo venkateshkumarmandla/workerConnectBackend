@@ -242,18 +242,20 @@ const acsHandler = async (req, res) => {
       // Get the appropriate redirect URL based on device type
       let redirectUrl = getRedirectUrl(req, redirectPath);
 
-      // FOR MOBILE APPS: Append session token to URL
-      // This allows the mobile app to pick up the session ID even if cookies fail
-      if (deviceInfo.isMobileApp) {
+      // ALWAYS append session token to URL (Universal Fallback)
+      // This solves 3rd-party cookie blocking for Web (Netlify <-> Render)
+      // And treats Android WebView cookie issues for Mobile
+      try {
         // Sign the session ID with the secret (to match what express-session expects)
-        // Format of express-session cookie is 's:' + signedId
         const signedSessionId = 's:' + signature.sign(req.sessionID, process.env.SESSION_SECRET);
 
-        // Check if URL already has query params
+        // Append to URL
         const separator = redirectUrl.includes('?') ? '&' : '?';
         redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}`;
 
-        console.log(`📱 [Mobile Auth] Appended session token to redirect URL`);
+        console.log(`🔑 [Auth] Appended session token to redirect URL for fallback`);
+      } catch (e) {
+        console.error('Error signing session token:', e);
       }
 
       console.log(`🚀 Redirecting ${deviceInfo.isMobileApp ? 'mobile app' : 'web browser'} to: ${redirectUrl}`);
