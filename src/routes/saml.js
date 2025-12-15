@@ -18,6 +18,7 @@ import { Strategy as SamlStrategy } from 'passport-saml';
 import { samlConfig, validateSamlConfig } from '../config/saml.js';
 import { requireSamlAuth, getPendingCardId, clearSamlSession } from '../middleware/samlAuth.js';
 import { successResponse, errorResponse, ERROR_CODES } from '../utils/response.js';
+import { getDeviceInfo, getRedirectUrl, isMobileApp } from '../utils/deviceDetection.js';
 
 const router = express.Router();
 
@@ -152,6 +153,10 @@ const acsHandler = async (req, res) => {
       employeeNumber: samlUser.employeeNumber
     });
 
+    // Log device information for debugging
+    const deviceInfo = getDeviceInfo(req);
+    console.log('📱 Device Info:', deviceInfo);
+
     // ============================================
     // CARD ID VALIDATION
     // ============================================
@@ -212,7 +217,10 @@ const acsHandler = async (req, res) => {
 
     console.log(`✅ [SAML] Session created for ${samlUser.email} as ${req.session.user.role}`);
 
-    // --- 5. REDIRECT TO DASHBOARD ---
+    // ============================================
+    // SMART DEVICE-BASED REDIRECT
+    // ============================================
+
     // Save session before redirecting
     req.session.save((err) => {
       if (err) {
@@ -221,16 +229,21 @@ const acsHandler = async (req, res) => {
       }
 
       const targetRole = req.session.user.role;
-      let redirectUrl = '/dashboard/worker'; // Default
+      let redirectPath = '/dashboard/worker'; // Default
 
+      // Determine dashboard path based on role
       if (targetRole === 'establishment') {
-        redirectUrl = '/dashboard/establishment';
+        redirectPath = '/dashboard/establishment';
+      } else if (targetRole === 'department') {
+        redirectPath = '/dashboard/department';
       }
 
-      console.log(`🚀 Redirecting to: ${redirectUrl}`);
+      // Get the appropriate redirect URL based on device type
+      const redirectUrl = getRedirectUrl(req, redirectPath);
 
-      const frontendUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-      return res.redirect(`${frontendUrl}${redirectUrl}`);
+      console.log(`🚀 Redirecting ${deviceInfo.isMobileApp ? 'mobile app' : 'web browser'} to: ${redirectUrl}`);
+
+      return res.redirect(redirectUrl);
     });
   } catch (error) {
     console.error('❌ Error in SAML ACS callback:', error);
