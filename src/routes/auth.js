@@ -30,31 +30,35 @@ const router = express.Router();
  *         description: Not authenticated
  */
 router.get('/user', (req, res) => {
-    // Debug logging to diagnose session issues
-    console.log('=== /api/auth/user Debug ===');
-    console.log('Session ID:', req.sessionID);
-    console.log('Session exists:', !!req.session);
-    console.log('Session.user exists:', !!(req.session && req.session.user));
-    console.log('Cookies received:', req.headers.cookie ? 'Yes' : 'No');
-    console.log('Cookie header:', req.headers.cookie);
-    console.log('Origin:', req.headers.origin);
-    console.log('Referer:', req.headers.referer);
-    
-    if (req.session) {
-        console.log('Session data:', JSON.stringify(req.session, null, 2));
-    }
-    console.log('========================');
-    
+    // Debug logging
+    console.log('🔍 [Auth Check] Headers:', {
+        origin: req.headers.origin,
+        cookie: req.headers.cookie ? 'Present' : 'Missing',
+        credentials: req.headers['access-control-request-credentials']
+    });
+
+    console.log('🔍 [Auth Check] Session:', {
+        exists: !!req.session,
+        id: req.session?.id,
+        hasUser: !!req.session?.user,
+        user: req.session?.user ? {
+            email: req.session.user.email,
+            role: req.session.user.role
+        } : null
+    });
+
     // Check if user is authenticated (works for all auth types)
     const isAuthenticated = req.session && req.session.user;
 
     if (isAuthenticated) {
+        console.log('✅ [Auth Check] User authenticated:', req.session.user.email);
         return res.json({
             authenticated: true,
             user: req.session.user
         });
     }
 
+    console.log('❌ [Auth Check] No authentication found');
     return res.status(401).json({
         authenticated: false,
         user: null,
