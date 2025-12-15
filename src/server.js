@@ -35,7 +35,11 @@ const CLIENT_URL = process.env.CLIENT_URL;
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // Mobile apps often send null or no origin header
+    if (!origin) {
+      console.log('🔓 CORS: Allowing request with no origin (mobile app or tool)');
+      return callback(null, true);
+    }
 
     const allowedOrigins = [
       'https://dulcet-cobbler-4df9df.netlify.app',
@@ -43,9 +47,14 @@ const corsOptions = {
       CLIENT_URL,
       'http://localhost:5173',
       'http://localhost:5174',
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://localhost:8100',
       'capacitor://localhost',
+      'ionic://localhost',
       'http://localhost',
-    ];
+      'file://',
+    ].filter(Boolean); // Remove undefined values
 
     // Normalize origin (remove trailing slash if present)
     const normalizedOrigin = origin.replace(/\/$/, '');
@@ -53,18 +62,37 @@ const corsOptions = {
     // Check if origin is allowed
     const isAllowed = allowedOrigins.some(allowed => {
       if (!allowed) return false;
-      return allowed.replace(/\/$/, '') === normalizedOrigin;
+      const normalizedAllowed = allowed.replace(/\/$/, '');
+      return normalizedAllowed === normalizedOrigin;
     });
 
-    if (isAllowed || FRONTEND_URL === '*' || (CLIENT_URL && CLIENT_URL === '*')) {
+    if (isAllowed) {
+      console.log(`✅ CORS: Allowing origin: ${origin}`);
+      callback(null, true);
+    } else if (FRONTEND_URL === '*' || (CLIENT_URL && CLIENT_URL === '*')) {
+      console.log(`✅ CORS: Allowing origin (wildcard enabled): ${origin}`);
       callback(null, true);
     } else {
-      callback(null, true); // Still allowing fallback for now as it's dev/debugging, but the specific origin is prioritized
+      // For development, log but still allow
+      console.log(`⚠️  CORS: Origin not in whitelist but allowing: ${origin}`);
+      callback(null, true); // Still allowing for backward compatibility
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'X-App-Platform',      // Custom header for mobile app detection
+    'X-Client-Type',       // Custom header for client type
+    'Cookie',
+    'Set-Cookie'
+  ],
+  exposedHeaders: ['Set-Cookie'],
+  maxAge: 86400, // 24 hours - Cache preflight requests
 };
 
 app.use(cors(corsOptions));
@@ -75,6 +103,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // Serve static files from public directory
 app.use(express.static('public'));
+
+// ============================================
+// PREFLIGHT REQUESTS HANDLER
+// ============================================
+
+// Handle OPTIONS requests for CORS preflight
+// This ensures mobile apps can complete preflight checks
+app.options('*', cors(corsOptions));
 
 // ============================================
 // SESSION CONFIGURATION
