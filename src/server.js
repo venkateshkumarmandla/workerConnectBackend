@@ -54,6 +54,11 @@ const corsOptions = {
       'ionic://localhost',
       'http://localhost',
       'file://',
+      // SafeNet Trusted Access IdP origins
+      'https://idp.eu.safenetid.com',
+      'https://idp.safenetid.com',
+      'https://idp.us.safenetid.com',
+      'https://idp.ap.safenetid.com',
     ].filter(Boolean); // Remove undefined values
 
     // Normalize origin (remove trailing slash if present)

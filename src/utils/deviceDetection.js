@@ -138,10 +138,15 @@ export function getRedirectUrl(req, path = '/') {
  * @returns {Object} - Device information
  */
 export function getDeviceInfo(req) {
+    // Cache detection results to avoid multiple checks and logs
+    const isMobile = isMobileApp(req);
+    const isMobileBrow = !isMobile && isMobileBrowser(req);
+    const isDesktop = !isMobile && !isMobileBrow;
+
     return {
-        isMobileApp: isMobileApp(req),
-        isMobileBrowser: isMobileBrowser(req),
-        isDesktopBrowser: isDesktopBrowser(req),
+        isMobileApp: isMobile,
+        isMobileBrowser: isMobileBrow,
+        isDesktopBrowser: isDesktop,
         userAgent: req.headers['user-agent'],
         origin: req.headers.origin,
         referer: req.headers.referer,
