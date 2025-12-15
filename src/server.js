@@ -202,9 +202,16 @@ app.use((req, res, next) => {
   // Log session info for auth-related requests
   if (req.path.includes('/api/auth') || req.path.includes('/saml')) {
     console.log(`📊 [Session] ${req.method} ${req.path}`);
-    console.log(`📊 [Session] Has Session: ${!!req.session}, ID: ${req.sessionID}`);
-    console.log(`📊 [Session] Has User: ${!!(req.session && req.session.user)}`);
-    console.log(`📊 [Session] Cookie Header: ${req.headers.cookie ? 'Present' : 'Missing'}`);
+    console.log(`   Protocol: ${req.protocol}, Secure: ${req.secure}, IP: ${req.ip}`);
+    console.log(`   Has Session: ${!!req.session}, ID: ${req.sessionID}`);
+    // Check if session has user (authenticated)
+    console.log(`   Has User: ${!!(req.session && req.session.user)}`);
+    console.log(`   Cookie Header: ${req.headers.cookie ? 'Present' : 'Missing'}`);
+
+    // Log X-Session-Token explicitly
+    if (req.headers['x-session-token']) {
+      console.log(`   X-Session-Token: Present (${req.headers['x-session-token'].substring(0, 10)}...)`);
+    }
   }
   next();
 });
