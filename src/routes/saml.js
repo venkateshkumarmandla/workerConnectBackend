@@ -19,6 +19,8 @@ import { samlConfig, validateSamlConfig } from '../config/saml.js';
 import { requireSamlAuth, getPendingCardId, clearSamlSession } from '../middleware/samlAuth.js';
 import { successResponse, errorResponse, ERROR_CODES } from '../utils/response.js';
 import { getDeviceInfo, getRedirectUrl, isMobileApp } from '../utils/deviceDetection.js';
+import { supabase } from '../config/supabase.js'; // Import Supabase client
+import { signToken } from '../config/jwt.js'; // Import JWT signer
 import signature from 'cookie-signature';
 
 const router = express.Router();
@@ -321,16 +323,20 @@ const acsHandler = async (req, res) => {
       // This solves 3rd-party cookie blocking for Web (Netlify <-> Render)
       // And treats Android WebView cookie issues for Mobile
       try {
+        // 1. Session Token (for Mobile/Legacy)
         // Sign the session ID with the secret (to match what express-session expects)
         const signedSessionId = 's:' + signature.sign(req.sessionID, process.env.SESSION_SECRET);
 
+        // 2. JWT Token (for Web/Start modern flow)
+        const jwtToken = signToken(req.session.user);
+
         // Append to URL
         const separator = redirectUrl.includes('?') ? '&' : '?';
-        redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}`;
+        redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}&token=${encodeURIComponent(jwtToken)}`;
 
-        console.log(`🔑 [Auth] Appended session token to redirect URL for fallback`);
+        console.log(`🔑 [Auth] Appended session token AND JWT to redirect URL`);
       } catch (e) {
-        console.error('Error signing session token:', e);
+        console.error('Error signing session/JWT token:', e);
       }
 
       console.log(`🚀 Redirecting ${deviceInfo.isMobileApp ? 'mobile app' : 'web browser'} to: ${redirectUrl}`);
@@ -695,6 +701,51 @@ router.post('/card-scan', async (req, res) => {
 
     const trimmedCardId = cardId.trim();
     console.log(`💳 Card scan received: ${trimmedCardId}`);
+
+    // ============================================
+    // VALIDATE CREDENTIALS IN SUPABASE
+    // ============================================
+
+    // Check if worker exists with this card ID
+    // We check against multiple possible identifier columns to be robust
+    let workerQuery = supabase
+      .from('worker')
+      .select('worker_id, first_name, status')
+      .or(`access_card_id.eq.${trimmedCardId},e_card_id.eq.${trimmedCardId}`);
+
+    // If cardId is numeric, also check worker_id
+    if (!isNaN(trimmedCardId)) {
+      workerQuery = supabase
+        .from('worker')
+        .select('worker_id, first_name, status')
+        .or(`worker_id.eq.${trimmedCardId},access_card_id.eq.${trimmedCardId},e_card_id.eq.${trimmedCardId}`);
+    }
+
+    const { data: workers, error: dbError } = await workerQuery;
+
+    if (dbError) {
+      console.error('❌ Supabase check error:', dbError);
+      return res.status(500).json(errorResponse(ERROR_CODES.INTERNAL_ERROR, 'Database validation failed', 'db'));
+    }
+
+    // Check if any worker found
+    if (!workers || workers.length === 0) {
+      console.warn(`⚠️ User not found for card ID: ${trimmedCardId}`);
+      return res.status(404).json(
+        errorResponse(ERROR_CODES.NOT_FOUND, 'User not found in system. Please contact administrator.', 'userNotFound')
+      );
+    }
+
+    // Check status
+    const worker = workers[0];
+    if (worker.status !== 'active') {
+      console.warn(`⚠️ User found but inactive: ${worker.worker_id}`);
+      return res.status(403).json(
+        errorResponse(ERROR_CODES.AUTHORIZATION_ERROR, 'User account is inactive.', 'inactive')
+      );
+    }
+
+    console.log(`✅ Validated user in Supabase: ${worker.first_name} (ID: ${worker.worker_id})`);
 
     // ============================================
     // CHECK IF USER IS ALREADY LOGGED IN

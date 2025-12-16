@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
 import { testConnection } from './config/supabase.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { jwtAuthMixin } from './middleware/jwtAuth.js'; // Added this import
 import { validateSamlConfig } from './config/saml.js';
 import signature from 'cookie-signature';
 
@@ -239,6 +240,9 @@ app.use((req, res, next) => {
  */
 app.use(passport.initialize());
 app.use(passport.session());
+
+// JWT Auth Middleware (runs after session, allows Bearer token to hydrate req.user)
+app.use(jwtAuthMixin);
 
 // Request logging
 app.use((req, res, next) => {
