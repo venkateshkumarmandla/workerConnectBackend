@@ -37,24 +37,41 @@ router.get('/user', (req, res) => {
         credentials: req.headers['access-control-request-credentials']
     });
 
-    console.log('🔍 [Auth Check] Session:', {
-        exists: !!req.session,
-        id: req.session?.id,
-        hasUser: !!req.session?.user,
-        user: req.session?.user ? {
-            email: req.session.user.email,
-            role: req.session.user.role
-        } : null
+    // Check if user is authenticated (works for all auth types)
+    // 1. Check custom session user (priority, has role/workerId)
+    // 2. Check passport user (fallback, basic profile)
+    let user = req.session && req.session.user;
+    let authSource = 'session.user';
+
+    if (!user && req.user) {
+        // Fallback to passport user
+        user = req.user;
+        authSource = 'req.user (Passport)';
+        console.log('⚠️ [Auth Check] using req.user fallback (session.user missing)');
+
+        // Try to repair session if we have the passport user
+        if (req.session) {
+            req.session.user = user;
+            console.log('🔧 [Auth Check] Repaired req.session.user from req.user');
+        }
+    }
+
+    // Extended debug info
+    console.log('🔍 [Auth Check] Session State:', {
+        sessionID: req.sessionID,
+        hasSession: !!req.session,
+        hasSessionUser: !!(req.session && req.session.user),
+        hasPassportUser: !!req.user,
+        authSource: user ? authSource : 'none'
     });
 
-    // Check if user is authenticated (works for all auth types)
-    const isAuthenticated = req.session && req.session.user;
-
-    if (isAuthenticated) {
-        console.log('✅ [Auth Check] User authenticated:', req.session.user.email);
+    if (user) {
+        console.log('✅ [Auth Check] User authenticated:', user.email || user.nameID);
         return res.json({
             authenticated: true,
-            user: req.session.user
+            user: user,
+            // Include debug info in success response too if needed, but usually clean is better
+            // source: authSource 
         });
     }
 
@@ -66,7 +83,8 @@ router.get('/user', (req, res) => {
             sessionExists: !!req.session,
             sessionID: req.sessionID,
             hasCookie: !!req.headers.cookie,
-            cookieNames: req.headers.cookie ? req.headers.cookie.split(';').map(c => c.trim().split('=')[0]) : []
+            hasPassportUser: !!req.user,
+            headers: req.headers['x-session-token'] ? 'Token Present' : 'No Token'
         }
     });
 });

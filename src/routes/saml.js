@@ -264,6 +264,15 @@ const acsHandler = async (req, res) => {
       role: req.session.loginRole || 'worker', // Use intended role or default to worker
     };
 
+    // CRITICAL FIX: Sync to Passport Session
+    // We overwrite the raw SAML profile in passport's storage with our rich user object
+    // This ensures req.user is populated correctly on subsequent requests
+    if (req.session.passport) {
+      req.session.passport.user = req.session.user;
+    }
+    // Also update current request user
+    req.user = req.session.user;
+
     console.log(`✅ [SAML] Session created for ${samlUser.email} as ${req.session.user.role}`);
 
     // ============================================
