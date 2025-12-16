@@ -394,18 +394,27 @@ router.get('/login/worker',
     req.session.loginRole = 'worker'; // Set intent
     console.log('🔒 Initiating Forced Worker Login');
 
-    // Store the redirect origin
-    storeRedirectOrigin(req, res);
+    // Determine redirect origin for RelayState
+    const rs = getRedirectOrigin(req);
+    req.relayState = rs;
 
     next();
   },
-  passport.authenticate('saml', {
-    failureRedirect: '/login',
-    failureFlash: true,
-    additionalParams: {
-      'ForceAuthn': 'true'
+  (req, res, next) => {
+    const authOptions = {
+      failureRedirect: '/login',
+      failureFlash: true,
+      additionalParams: {
+        'ForceAuthn': 'true'
+      }
+    };
+
+    if (req.relayState) {
+      authOptions.additionalParams['RelayState'] = req.relayState;
     }
-  })
+
+    passport.authenticate('saml', authOptions)(req, res, next);
+  }
 );
 
 // Establishment Specific Login (Forces Auth)
@@ -414,18 +423,27 @@ router.get('/login/establishment',
     req.session.loginRole = 'establishment'; // Set intent
     console.log('🏢 Initiating Forced Establishment Login');
 
-    // Store the redirect origin
-    storeRedirectOrigin(req, res);
+    // Determine redirect origin for RelayState
+    const rs = getRedirectOrigin(req);
+    req.relayState = rs;
 
     next();
   },
-  passport.authenticate('saml', {
-    failureRedirect: '/login',
-    failureFlash: true,
-    additionalParams: {
-      'ForceAuthn': 'true'
+  (req, res, next) => {
+    const authOptions = {
+      failureRedirect: '/login',
+      failureFlash: true,
+      additionalParams: {
+        'ForceAuthn': 'true'
+      }
+    };
+
+    if (req.relayState) {
+      authOptions.additionalParams['RelayState'] = req.relayState;
     }
-  })
+
+    passport.authenticate('saml', authOptions)(req, res, next);
+  }
 );
 
 /**
