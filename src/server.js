@@ -586,15 +586,6 @@ const startServer = async () => {
       console.log('');
       console.log('🔐 SAML Authentication:');
       console.log('   GET  /saml/login     - Start SAML authentication');
-      console.log('   POST /saml/acs       - SAML callback');
-      // Log the profile for debugging (remove in production)
-      console.log('📋 SAML Profile received (RAW keys):', Object.keys(profile));
-      console.log('📋 SAML Profile received (Full):', JSON.stringify(profile, null, 2));
-      console.log('📋 Mapped Attributes:', {
-        nameID: userAttributes.nameID,
-        employeeNumber: userAttributes.employeeNumber,
-        email: userAttributes.email
-      });
       console.log('   POST /saml/logout    - Logout');
       console.log('   GET  /metadata       - SP metadata XML');
       console.log('   POST /card-scan      - Card reader scan');
