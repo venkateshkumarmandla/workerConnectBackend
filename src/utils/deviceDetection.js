@@ -107,13 +107,16 @@ export function isDesktopBrowser(req) {
     return !isMobileApp(req) && !isMobileBrowser(req);
 }
 
-/**
- * Get the appropriate redirect URL based on device type
- * @param {Object} req - Express request object
- * @param {string} path - Path to redirect to (e.g., '/dashboard/worker')
- * @returns {string} - Full redirect URL
- */
-export function getRedirectUrl(req, path = '/') {
+export function getRedirectUrl(req, path = '/', baseUrl = null) {
+    // If a specific base URL is provided (e.g. from session or RelayState), use it
+    if (baseUrl) {
+        // Normalize base URL (remove trailing slash)
+        const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        console.log(`🎯 Redirecting using dynamic base URL: ${cleanBaseUrl}${cleanPath}`);
+        return `${cleanBaseUrl}${cleanPath}`;
+    }
+
     const isMobile = isMobileApp(req);
 
     // Remove leading slash from path if exists for consistent concatenation
@@ -126,6 +129,7 @@ export function getRedirectUrl(req, path = '/') {
         return `${mobileUrl}${cleanPath}`;
     } else {
         // Web browser redirect
+        // Fallback to CLIENT_URL for backward compatibility if no baseUrl provided
         const webUrl = process.env.CLIENT_URL || 'http://localhost:5173';
         console.log(`🌐 Redirecting web browser to: ${webUrl}${cleanPath}`);
         return `${webUrl}${cleanPath}`;

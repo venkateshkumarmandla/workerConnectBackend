@@ -117,6 +117,46 @@ passport.deserializeUser((user, done) => {
  *       500:
  *         description: Server error
  */
+// Helper to store redirect origin
+const storeRedirectOrigin = (req, res) => {
+  // 1. Check for explicit redirect_to param
+  // 2. Check for Origin header (if valid and allowed)
+  // 3. Check for Referer header
+
+  let redirectOrigin = req.query.redirect_to;
+
+  if (!redirectOrigin) {
+    const origin = req.headers.origin;
+    // Basic validation to ensure we only redirect to allowed domains
+    if (origin && (origin.includes('localhost') || origin.includes('netlify.app'))) {
+      redirectOrigin = origin;
+    }
+  }
+
+  // Fallback to Referer if safe
+  if (!redirectOrigin && req.headers.referer) {
+    try {
+      const refererUrl = new URL(req.headers.referer);
+      if (refererUrl.origin.includes('localhost') || refererUrl.origin.includes('netlify.app')) {
+        redirectOrigin = refererUrl.origin;
+      }
+    } catch (e) {
+      // invalid url
+    }
+  }
+
+  if (redirectOrigin) {
+    // Store in a short-lived cookie (5 mins)
+    res.cookie('saml_redirect_origin', redirectOrigin, {
+      maxAge: 5 * 60 * 1000,
+      httpOnly: true,
+      secure: true, // Always secure for cross-site flows
+      sameSite: 'none' // Required for cross-site
+    });
+    console.log(`📍 Stored redirect origin for SAML return: ${redirectOrigin}`);
+  }
+};
+
 router.get('/login', (req, res, next) => {
   // Check if there's a pending card scan
   const pendingCardId = req.session.pendingCardId;
@@ -126,6 +166,9 @@ router.get('/login', (req, res, next) => {
   } else {
     console.log('🔐 Starting SAML login (manual)');
   }
+
+  // Store the redirect origin
+  storeRedirectOrigin(req, res);
 
   // Default to worker if no specific role is requested
   req.session.loginRole = 'worker';
@@ -240,7 +283,16 @@ const acsHandler = async (req, res) => {
       }
 
       // Get the appropriate redirect URL based on device type
-      let redirectUrl = getRedirectUrl(req, redirectPath);
+      // Check if we have a stored redirect origin cookie
+      let dynamicBaseUrl = null;
+      if (req.cookies && req.cookies.saml_redirect_origin) {
+        dynamicBaseUrl = req.cookies.saml_redirect_origin;
+        console.log(`found validated redirect origin cookie: ${dynamicBaseUrl}`);
+        // Clear the cookie
+        res.clearCookie('saml_redirect_origin');
+      }
+
+      let redirectUrl = getRedirectUrl(req, redirectPath, dynamicBaseUrl);
 
       // ALWAYS append session token to URL (Universal Fallback)
       // This solves 3rd-party cookie blocking for Web (Netlify <-> Render)
@@ -327,6 +379,10 @@ router.get('/login/worker',
   (req, res, next) => {
     req.session.loginRole = 'worker'; // Set intent
     console.log('🔒 Initiating Forced Worker Login');
+
+    // Store the redirect origin
+    storeRedirectOrigin(req, res);
+
     next();
   },
   passport.authenticate('saml', {
@@ -343,6 +399,10 @@ router.get('/login/establishment',
   (req, res, next) => {
     req.session.loginRole = 'establishment'; // Set intent
     console.log('🏢 Initiating Forced Establishment Login');
+
+    // Store the redirect origin
+    storeRedirectOrigin(req, res);
+
     next();
   },
   passport.authenticate('saml', {
