@@ -117,8 +117,8 @@ passport.deserializeUser((user, done) => {
  *       500:
  *         description: Server error
  */
-// Helper to store redirect origin
-const storeRedirectOrigin = (req, res) => {
+// Helper to determine the redirect origin (for RelayState)
+const getRedirectOrigin = (req) => {
   // 1. Check for explicit redirect_to param
   // 2. Check for Origin header (if valid and allowed)
   // 3. Check for Referer header
@@ -146,15 +146,11 @@ const storeRedirectOrigin = (req, res) => {
   }
 
   if (redirectOrigin) {
-    // Store in a short-lived cookie (5 mins)
-    res.cookie('saml_redirect_origin', redirectOrigin, {
-      maxAge: 5 * 60 * 1000,
-      httpOnly: true,
-      secure: true, // Always secure for cross-site flows
-      sameSite: 'none' // Required for cross-site
-    });
-    console.log(`📍 Stored redirect origin for SAML return: ${redirectOrigin}`);
+    console.log(`📍 Identified redirect origin for RelayState: ${redirectOrigin}`);
+    return redirectOrigin;
   }
+
+  return null;
 };
 
 router.get('/login', (req, res, next) => {
@@ -167,18 +163,27 @@ router.get('/login', (req, res, next) => {
     console.log('🔐 Starting SAML login (manual)');
   }
 
-  // Store the redirect origin
-  storeRedirectOrigin(req, res);
+  // Determine redirect origin for RelayState
+  const relayState = getRedirectOrigin(req);
 
   // Default to worker if no specific role is requested
   req.session.loginRole = 'worker';
 
   // Initiate SAML authentication
   // Passport will redirect to STA entry point
-  passport.authenticate('saml', {
+  const authOptions = {
     failureRedirect: '/login',
     failureFlash: true,
-  })(req, res, next);
+  };
+
+  // Pass RelayState to STA (it will be echoed back in ACS)
+  if (relayState) {
+    authOptions.additionalParams = {
+      'RelayState': relayState
+    };
+  }
+
+  passport.authenticate('saml', authOptions)(req, res, next);
 });
 
 /**
@@ -284,8 +289,17 @@ const acsHandler = async (req, res) => {
 
       // Get the appropriate redirect URL based on device type
       // Check if we have a stored redirect origin cookie
+      // Get the appropriate redirect URL based on device type
+      // Check if we have a RelayState (from IdP) or stored cookie
       let dynamicBaseUrl = null;
-      if (req.cookies && req.cookies.saml_redirect_origin) {
+
+      // 1. Check RelayState (Robust: persists across IdP hop)
+      if (req.body.RelayState) {
+        dynamicBaseUrl = req.body.RelayState;
+        console.log(`🎯 Found RelayState for redirect: ${dynamicBaseUrl}`);
+      }
+      // 2. Fallback to cookie (Legacy/Backup)
+      else if (req.cookies && req.cookies.saml_redirect_origin) {
         dynamicBaseUrl = req.cookies.saml_redirect_origin;
         console.log(`found validated redirect origin cookie: ${dynamicBaseUrl}`);
         // Clear the cookie
