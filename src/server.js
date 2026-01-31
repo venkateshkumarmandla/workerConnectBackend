@@ -45,6 +45,7 @@ const corsOptions = {
 
     const allowedOrigins = [
       'https://dulcet-cobbler-4df9df.netlify.app',
+      'https://worker-connect-fe.vercel.app/',
       FRONTEND_URL,
       CLIENT_URL,
       'http://localhost:5173',
@@ -349,6 +350,7 @@ app.get('/metadata', handleMetadata);
 
 // API routes with /api prefix to match frontend
 app.use('/api/auth', authRoutes);
+app.use('/api', authRoutes); // Supports /api/logout, /api/user, etc.
 app.use('/api/worker', workerRoutes);
 app.use('/api/establishment', establishmentRoutes);
 app.use('/api/department', departmentRoutes);
@@ -371,7 +373,7 @@ const inferTable = (path) => {
   if (path.includes('/api/worker')) return 'worker';
   if (path.includes('/api/establishment')) return 'establishment';
   if (path.includes('/api/department')) return 'department_user';
-  if (path.includes('/api/attendance')) return 'attendance_log';
+  if (path.includes('/api/attendance')) return 'attendance';
   if (path.includes('/api/location')) return 'states, districts, cities';
   if (path.includes('/saml')) return 'saml_config';
   if (path.includes('/api-docs')) return 'swagger_docs';

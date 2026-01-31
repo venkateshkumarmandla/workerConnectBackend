@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { recordLogoutAttendance } from '../utils/attendanceHelper.js';
 
 const router = express.Router();
 
@@ -146,6 +147,73 @@ router.get('/session-info', (req, res) => {
             }
         }
     });
+});
+
+/**
+ * @swagger
+ * /api/logout:
+ *   all:
+ *     summary: Logout user
+ *     description: Destroys the current session and records attendance logout for workers
+ *     tags: [Authentication]
+ */
+router.all('/logout', async (req, res) => {
+    try {
+        const user = req.user || (req.session && req.session.user);
+        const workerId = user && (user.workerId || user.id);
+
+        console.log(`Log out user: ${user?.email || user?.nameID || 'unknown'}`);
+
+        // Automatically record attendance logout for workers
+        let attendanceMsg = null;
+        if (user && user.role === 'worker' && workerId) {
+            console.log(`🕒 [Logout] Recording attendance for worker: ${workerId}`);
+            try {
+                const result = await recordLogoutAttendance(workerId);
+                attendanceMsg = result.message;
+            } catch (err) {
+                console.error('Failed to record logout attendance:', err);
+            }
+        }
+
+        // Handle Passport logout (sequential)
+        if (req.logout) {
+            await new Promise((resolve) => {
+                req.logout({ keepSessionInfo: false }, (err) => {
+                    if (err) console.error('Passport logout error:', err);
+                    resolve();
+                });
+            });
+            console.log('✅ [Logout] Passport logout completed');
+        }
+
+        // Destroy session
+        if (req.session) {
+            req.session.destroy((err) => {
+                if (err) {
+                    console.error('Session destroy error:', err);
+                    return res.status(500).json({ success: false, message: 'Logout failed' });
+                }
+                res.clearCookie('saml.sid');
+                console.log('✅ [Logout] Session destroyed successfully');
+                return res.json({
+                    success: true,
+                    message: attendanceMsg || 'Logout successful',
+                    attendanceMessage: attendanceMsg
+                });
+            });
+        }
+        else {
+            return res.json({
+                success: true,
+                message: attendanceMsg || 'No session to logout',
+                attendanceMessage: attendanceMsg
+            });
+        }
+    } catch (error) {
+        console.error('❌ [Logout] Error during logout:', error);
+        res.status(500).json({ success: false, message: 'Logout error' });
+    }
 });
 
 export default router;

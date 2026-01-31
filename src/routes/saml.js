@@ -22,6 +22,7 @@ import { getDeviceInfo, getRedirectUrl, isMobileApp } from '../utils/deviceDetec
 import { supabase } from '../config/supabase.js'; // Import Supabase client
 import { signToken } from '../config/jwt.js'; // Import JWT signer
 import signature from 'cookie-signature';
+import { recordLoginAttendance, recordLogoutAttendance } from '../utils/attendanceHelper.js';
 
 const router = express.Router();
 
@@ -277,6 +278,18 @@ const acsHandler = async (req, res) => {
 
     console.log(`✅ [SAML] Session created for ${samlUser.email} as ${req.session.user.role}`);
 
+    // Automatically record attendance login for workers
+    let attendanceMsg = null;
+    if (req.session.user.role === 'worker' && req.session.user.workerId) {
+      try {
+        const attendanceResult = await recordLoginAttendance(req.session.user.workerId);
+        attendanceMsg = attendanceResult.message;
+        console.log(`🕒 [SAML Attendance] ${attendanceMsg}`);
+      } catch (err) {
+        console.error('Failed to record SAML login attendance:', err);
+      }
+    }
+
     // ============================================
     // SMART DEVICE-BASED REDIRECT
     // ============================================
@@ -333,6 +346,10 @@ const acsHandler = async (req, res) => {
         // Append to URL
         const separator = redirectUrl.includes('?') ? '&' : '?';
         redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}&token=${encodeURIComponent(jwtToken)}`;
+
+        if (attendanceMsg) {
+          redirectUrl = `${redirectUrl}&attendanceMessage=${encodeURIComponent(attendanceMsg)}`;
+        }
 
         console.log(`🔑 [Auth] Appended session token AND JWT to redirect URL`);
       } catch (e) {
@@ -404,6 +421,7 @@ router.get('/acs', (req, res, next) => {
 // (We removed the duplicate here)
 
 // Worker Specific Login (Forces Auth)
+/* URL: /login/worker - ORIGINAL IMPLEMENTATION
 router.get('/login/worker',
   (req, res, next) => {
     req.session.loginRole = 'worker'; // Set intent
@@ -431,8 +449,84 @@ router.get('/login/worker',
     passport.authenticate('saml', authOptions)(req, res, next);
   }
 );
+*/
+router.get('/login/worker',
+  async (req, res, next) => {
+    console.log('🔓 BYPASSING SAML: Forced Worker Login');
+    req.session.loginRole = 'worker';
+
+    // Mock User for Worker Bypass
+    const mockWorker = {
+      nameID: 'worker_bypass@example.com',
+      workerId: 'WORKER_BYPASS_001',
+      employeeNumber: 'WORKER_BYPASS_001',
+      email: 'worker_bypass@example.com',
+      firstName: 'Bypass',
+      lastName: 'Worker',
+      name: 'Bypass Worker',
+      cardId: 'WORKER_BYPASS_001',
+      establishmentId: null,
+      role: 'worker'
+    };
+
+    req.session.user = mockWorker;
+    // CRITICAL FIX: Sync to Passport Session
+    if (!req.session.passport) req.session.passport = {};
+    req.session.passport.user = mockWorker;
+    req.user = mockWorker;
+
+    // Automatically record attendance login for worker bypass
+    let attendanceMsg = null;
+    try {
+      const attendanceResult = await recordLoginAttendance(mockWorker.workerId);
+      attendanceMsg = attendanceResult.message;
+      console.log(`🕒 [Bypass Attendance] ${attendanceMsg}`);
+    } catch (err) {
+      console.error('Failed to record bypass login attendance:', err);
+    }
+
+    // Determine redirect origin
+    // Use getRedirectOrigin to be safe, or just check headers/query manually
+    // The original code used getRedirectOrigin(req)
+    const rs = getRedirectOrigin(req);
+    let dynamicBaseUrl = rs;
+
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Session save error:', err);
+        return res.status(500).send('Session save error');
+      }
+
+      const redirectPath = '/dashboard/worker';
+      // getRedirectUrl is imported in the file
+      let redirectUrl = getRedirectUrl(req, redirectPath, dynamicBaseUrl);
+
+      try {
+        // Generate tokens
+        const signedSessionId = 's:' + signature.sign(req.sessionID, process.env.SESSION_SECRET);
+        const jwtToken = signToken(req.session.user);
+
+        // Append to URL
+        const separator = redirectUrl.includes('?') ? '&' : '?';
+        redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}&token=${encodeURIComponent(jwtToken)}`;
+
+        if (attendanceMsg) {
+          redirectUrl = `${redirectUrl}&attendanceMessage=${encodeURIComponent(attendanceMsg)}`;
+        }
+
+        console.log(`🔑 [Auth Bypass] Appended session token AND JWT to redirect URL`);
+      } catch (e) {
+        console.error('Error signing session/JWT token:', e);
+      }
+
+      console.log(`🚀 Bypassed redirect to: ${redirectUrl}`);
+      return res.redirect(redirectUrl);
+    });
+  }
+);
 
 // Establishment Specific Login (Forces Auth)
+/* URL: /login/establishment - ORIGINAL IMPLEMENTATION
 router.get('/login/establishment',
   (req, res, next) => {
     req.session.loginRole = 'establishment'; // Set intent
@@ -458,6 +552,64 @@ router.get('/login/establishment',
     }
 
     passport.authenticate('saml', authOptions)(req, res, next);
+  }
+);
+*/
+router.get('/login/establishment',
+  async (req, res, next) => {
+    console.log('🏢 BYPASSING SAML: Forced Establishment Login');
+    req.session.loginRole = 'establishment';
+
+    // Mock User for Establishment Bypass
+    const mockEstablishment = {
+      nameID: 'establishment_bypass@example.com',
+      workerId: 'EST_BYPASS_001',
+      employeeNumber: 'EST_BYPASS_001',
+      email: 'establishment_bypass@example.com',
+      firstName: 'Bypass',
+      lastName: 'Establishment',
+      name: 'Bypass Establishment',
+      cardId: 'EST_BYPASS_001',
+      establishmentId: 'EST_BYPASS_ID',
+      role: 'establishment'
+    };
+
+    req.session.user = mockEstablishment;
+    // CRITICAL FIX: Sync to Passport Session
+    if (!req.session.passport) req.session.passport = {};
+    req.session.passport.user = mockEstablishment;
+    req.user = mockEstablishment;
+
+    // Determine redirect origin
+    const rs = getRedirectOrigin(req);
+    let dynamicBaseUrl = rs;
+
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Session save error:', err);
+        return res.status(500).send('Session save error');
+      }
+
+      const redirectPath = '/dashboard/establishment';
+      let redirectUrl = getRedirectUrl(req, redirectPath, dynamicBaseUrl);
+
+      try {
+        // Generate tokens
+        const signedSessionId = 's:' + signature.sign(req.sessionID, process.env.SESSION_SECRET);
+        const jwtToken = signToken(req.session.user);
+
+        // Append to URL
+        const separator = redirectUrl.includes('?') ? '&' : '?';
+        redirectUrl = `${redirectUrl}${separator}session_token=${encodeURIComponent(signedSessionId)}&token=${encodeURIComponent(jwtToken)}`;
+
+        console.log(`🔑 [Auth Bypass] Appended session token AND JWT to redirect URL`);
+      } catch (e) {
+        console.error('Error signing session/JWT token:', e);
+      }
+
+      console.log(`🚀 Bypassed redirect to: ${redirectUrl}`);
+      return res.redirect(redirectUrl);
+    });
   }
 );
 
@@ -530,10 +682,23 @@ router.post('/acs',
  *       401:
  *         description: Not authenticated
  */
-router.post('/logout', requireSamlAuth, (req, res) => {
-  const user = req.session.samlUser;
+router.post('/logout', requireSamlAuth, async (req, res) => {
+  const user = req.session.user; // Use req.session.user which has role and workerId
+  const workerId = user?.workerId;
 
-  console.log('🚪 Logging out user:', user?.nameID || 'unknown');
+  console.log('🚪 Logging out user:', user?.email || user?.nameID || 'unknown');
+
+  // Automatically record attendance logout for workers
+  let attendanceMsg = null;
+  if (user?.role === 'worker' && workerId) {
+    try {
+      const attendanceResult = await recordLogoutAttendance(workerId);
+      attendanceMsg = attendanceResult.message;
+      console.log(`🕒 [SAML Logout Attendance] ${attendanceMsg}`);
+    } catch (err) {
+      console.error('Failed to record logout attendance:', err);
+    }
+  }
 
   // Clear SAML session
   clearSamlSession(req);
@@ -555,7 +720,8 @@ router.post('/logout', requireSamlAuth, (req, res) => {
       // Return JSON response for API calls
       if (req.headers['content-type']?.includes('application/json')) {
         return res.json(successResponse({
-          message: 'Logout successful',
+          message: attendanceMsg || 'Logout successful',
+          attendanceMessage: attendanceMsg,
           redirectTo: '/login'
         }));
       }
@@ -684,6 +850,7 @@ export { handleMetadata };
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+/* CARD SCANNER NOT PRESENT
 router.post('/card-scan', async (req, res) => {
   try {
     const { cardId } = req.body;
@@ -825,6 +992,7 @@ router.post('/card-scan', async (req, res) => {
     );
   }
 });
+*/
 
 /**
  * @swagger

@@ -5,20 +5,31 @@ import {
   getEstablishmentAttendance,
   getCurrentlyCheckedInWorkers,
   getTodayAttendance,
-  getCurrentCount
+  getCurrentCount,
+  getDailyStatus,
+  getMonthlySummary,
+  getEstablishmentMonthlyReport,
+  getDepartmentAttendanceData
 } from '../controllers/attendanceController.js';
-import { authenticateToken, authenticateSession } from '../middleware/auth.js';
+import { authenticateSession } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
+// Base context is /api/attendance (from server.js mapping)
+
 // Check-in/out endpoint
-// checkInOrOut might be called from card scan which handles auth differently or
-// from frontend which needs session. For now, let's allow session auth.
 router.post('/checkinorout', authenticateSession, asyncHandler(checkInOrOut));
 
-// Protected routes
-// Using authenticateSession instead of authenticateToken for SAML-based frontend
+// Status and Summary routes (Worker)
+router.get('/status/:workerId', authenticateSession, asyncHandler(getDailyStatus));
+router.get('/summary/worker/:workerId', authenticateSession, asyncHandler(getMonthlySummary));
+
+// Dashboard / Reporting routes (Establishment & Department)
+router.get('/report/establishment/:establishmentId', authenticateSession, asyncHandler(getEstablishmentMonthlyReport));
+router.get('/report/department/:departmentId', authenticateSession, asyncHandler(getDepartmentAttendanceData));
+
+// Standard History routes
 router.get('/worker/:workerId', authenticateSession, asyncHandler(getWorkerAttendance));
 router.get('/establishment/:establishmentId', authenticateSession, asyncHandler(getEstablishmentAttendance));
 router.get('/current', authenticateSession, asyncHandler(getCurrentlyCheckedInWorkers));

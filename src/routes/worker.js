@@ -1,5 +1,5 @@
 import express from 'express';
-import { registerWorker, loginWorker, getWorkerProfile } from '../controllers/workerController.js';
+import { registerWorker, loginWorker, getWorkerProfile, getWorkerDashboardDetails } from '../controllers/workerController.js';
 import { authenticateToken, verifyWorkerOwnership } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
@@ -176,6 +176,7 @@ router.post('/login', asyncHandler(loginWorker));
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+router.get('/details', authenticateToken, asyncHandler(getWorkerDashboardDetails));
 router.get('/profile/:workerId', authenticateToken, asyncHandler(getWorkerProfile));
 
 export default router;
