@@ -7,7 +7,8 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+  console.error('⚠️  Missing Supabase environment variables. Database operations will fail.');
+  console.error('   Please configure SUPABASE_URL and SUPABASE_SERVICE_KEY in your environment.');
 }
 
 // Create Supabase client with service role key
@@ -26,7 +27,7 @@ export const testConnection = async () => {
       .from('state')
       .select('count')
       .limit(1);
-    
+
     if (error) throw error;
     console.log('✅ Successfully connected to Supabase PostgreSQL');
     return true;
