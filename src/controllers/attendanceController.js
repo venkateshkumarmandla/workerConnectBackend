@@ -32,15 +32,60 @@ export const checkInOrOut = async (req, res, next) => {
     let result;
     let message;
 
-    if (status === 'o' || (attendanceId && attendanceId !== 0)) {
+    if (status === 'o') {
       // Manual/Explicit Check-out
-      const targetId = attendanceId || 0;
+      let targetId = attendanceId;
+      let activeRecord = null;
+
+      if (!targetId || targetId === 0) {
+        // Find the latest incomplete check-in for this worker
+        const { data, error: findError } = await supabase
+          .from('attendance')
+          .select('*')
+          .eq('worker_id', workerId)
+          .eq('status', 'i')
+          .is('check_out_date_time', null)
+          .order('check_in_date_time', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (findError) throw findError;
+        if (!data) {
+          return res.status(400).json(
+            errorResponse(
+              ERROR_CODES.NOT_FOUND,
+              'No active check-in found for this worker.',
+              'attendance'
+            )
+          );
+        }
+        activeRecord = data;
+        targetId = activeRecord.attendance_id;
+      } else {
+        // Fetch the record to calculate hours
+        const { data, error: fetchError } = await supabase
+          .from('attendance')
+          .select('*')
+          .eq('attendance_id', targetId)
+          .single();
+        if (fetchError) throw fetchError;
+        activeRecord = data;
+      }
+
+      const checkOutTime = checkOutDateTime || new Date().toISOString();
+      const checkInTime = activeRecord.check_in_date_time;
+
+      // Calculate Hours
+      const durationMs = new Date(checkOutTime) - new Date(checkInTime);
+      const hours = Math.max(0, durationMs / (1000 * 60 * 60)).toFixed(2);
 
       const { data, error } = await supabase
         .from('attendance')
         .update({
-          check_out_date_time: checkOutDateTime || new Date().toISOString(),
-          status: 'o'
+          check_out_date_time: checkOutTime,
+          status: 'o',
+          gross_hours: parseFloat(hours),
+          effective_hours: parseFloat(hours) // Can be adjusted for breaks later
         })
         .eq('attendance_id', targetId)
         .select()
@@ -48,33 +93,30 @@ export const checkInOrOut = async (req, res, next) => {
 
       if (error) throw error;
       result = data;
-      message = 'Logout successful. Attendance recorded for today.';
+      message = `Logout successful. Total hours: ${hours}`;
 
     } else if (status === 'i') {
       // Manual/Explicit Check-in
       const today = new Date().toISOString().split('T')[0];
 
-      // Check for existing records today
-      const { data: todayRecords, error: checkError } = await supabase
+      // Check if ALREADY checked in (don't allow double check-in)
+      const { data: activeRecords, error: checkError } = await supabase
         .from('attendance')
         .select('*')
         .eq('worker_id', workerId)
-        .gte('check_in_date_time', `${today}T00:00:00`)
-        .order('check_in_date_time', { ascending: false });
+        .eq('status', 'i')
+        .is('check_out_date_time', null);
 
       if (checkError) throw checkError;
 
-      if (todayRecords && todayRecords.length > 0) {
-        const lastRecord = todayRecords[0];
-        if (lastRecord.status === 'i' && !lastRecord.check_out_date_time) {
-          return res.status(400).json(successResponse({ statusCode: 400, message: 'You are already logged in for today.' }));
-        }
-        if (lastRecord.status === 'o' || lastRecord.check_out_date_time) {
-          return res.status(400).json(successResponse({ statusCode: 400, message: 'Attendance already recorded for today.' }));
-        }
+      if (activeRecords && activeRecords.length > 0) {
+        return res.status(400).json(successResponse({
+          statusCode: 400,
+          message: 'You are already logged in. Please logout before checking in again.'
+        }));
       }
 
-      // Create new attendance
+      // Create new attendance record (Multiple check-ins per day are now allowed as long as previous is closed)
       const { data, error } = await supabase
         .from('attendance')
         .insert({
@@ -84,26 +126,31 @@ export const checkInOrOut = async (req, res, next) => {
           work_location: workLocation || '',
           check_in_date_time: checkInDateTime || new Date().toISOString(),
           check_out_date_time: null,
-          status: 'i'
+          status: 'i',
+          gross_hours: 0,
+          effective_hours: 0
         })
         .select()
         .single();
 
       if (error) throw error;
       result = data;
-      message = 'Login successful. Attendance has started for today.';
+      message = 'Login successful. Attendance has started.';
     }
+
 
     res.json(successResponse({
       statusCode: 200,
       message: message,
       data: result
     }));
-
   } catch (error) {
     next(error);
   }
 };
+
+
+
 
 /**
  * Get daily attendance status for a worker
@@ -322,6 +369,249 @@ export const getCurrentCount = async (req, res, next) => {
     const { count, error } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('status', 'i').is('check_out_date_time', null);
     if (error) throw error;
     res.json(successResponse({ count: count || 0 }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get worker monthly attendance summary with counts
+ * GET /api/attendance/worker/:workerId/monthly-summary
+ */
+export const getWorkerMonthlySummaryWithCounts = async (req, res, next) => {
+  try {
+    const { workerId } = req.params;
+    const currentDate = new Date();
+    const month = req.query.month ? parseInt(req.query.month) : currentDate.getMonth() + 1;
+    const year = req.query.year ? parseInt(req.query.year) : currentDate.getFullYear();
+
+    // Role-based access control
+    if (req.user && req.user.role === 'worker' && req.user.id !== parseInt(workerId)) {
+      return res.status(403).json(errorResponse(ERROR_CODES.AUTHORIZATION_ERROR, 'You can only view your own attendance data.'));
+    }
+
+    // Calculate date range
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    // Fetch attendance records for the month
+    const { data: attendanceRecords, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('worker_id', workerId)
+      .gte('check_in_date_time', `${startDate}T00:00:00`)
+      .lte('check_in_date_time', `${endDate}T23:59:59`)
+      .order('check_in_date_time', { ascending: true });
+
+    if (error) throw error;
+
+    // Calculate working days (Mon-Fri) in the month
+    let totalWorkingDays = 0;
+    for (let day = 1; day <= lastDay; day++) {
+      const date = new Date(year, month - 1, day);
+      const dayOfWeek = date.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday (0) or Saturday (6)
+        totalWorkingDays++;
+      }
+    }
+
+    // Count unique days present
+    const uniqueDatesPresent = new Set();
+    const dailyRecords = [];
+
+    if (attendanceRecords && attendanceRecords.length > 0) {
+      attendanceRecords.forEach(record => {
+        const recordDate = record.check_in_date_time.split('T')[0];
+        uniqueDatesPresent.add(recordDate);
+
+        dailyRecords.push({
+          date: recordDate,
+          checkIn: record.check_in_date_time,
+          checkOut: record.check_out_date_time,
+          status: record.check_out_date_time ? 'present' : 'incomplete',
+          workLocation: record.work_location
+        });
+      });
+    }
+
+    const daysPresent = uniqueDatesPresent.size;
+    const daysAbsent = totalWorkingDays - daysPresent;
+
+    res.json(successResponse({
+      workerId: parseInt(workerId),
+      month,
+      year,
+      totalWorkingDays,
+      daysPresent,
+      daysAbsent,
+      attendancePercentage: totalWorkingDays > 0 ? Math.round((daysPresent / totalWorkingDays) * 100) : 0,
+      attendanceRecords: dailyRecords
+    }, 'Worker monthly summary retrieved successfully.'));
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get establishment department-wise statistics
+ * GET /api/attendance/establishment/:establishmentId/department-stats
+ */
+export const getEstablishmentDepartmentStats = async (req, res, next) => {
+  try {
+    const { establishmentId } = req.params;
+    const date = req.query.date || new Date().toISOString().split('T')[0];
+
+    // Role-based access control
+    if (req.user && req.user.role === 'establishment' && req.user.id !== parseInt(establishmentId)) {
+      return res.status(403).json(errorResponse(ERROR_CODES.AUTHORIZATION_ERROR, 'You can only view your own establishment data.'));
+    }
+
+    // Get all workers for this establishment
+    const { data: establishmentWorkers, error: workersError } = await supabase
+      .from('establishment_worker')
+      .select(`
+        estmt_worker_id,
+        worker_id,
+        worker:worker_id (
+          worker_id,
+          full_name,
+          mobile_number
+        )
+      `)
+      .eq('establishment_id', establishmentId)
+      .eq('status', 'active');
+
+    if (workersError) throw workersError;
+
+    // Get attendance for today
+    const { data: todayAttendance, error: attendanceError } = await supabase
+      .from('attendance')
+      .select('worker_id, work_location, status, check_in_date_time, check_out_date_time')
+      .eq('establishment_id', establishmentId)
+      .gte('check_in_date_time', `${date}T00:00:00`)
+      .lte('check_in_date_time', `${date}T23:59:59`);
+
+    if (attendanceError) throw attendanceError;
+
+    // Group workers by department (using work_location from attendance or default to "General")
+    const departmentMap = new Map();
+
+    // Initialize with all workers
+    if (establishmentWorkers) {
+      establishmentWorkers.forEach(ew => {
+        // Find attendance record for this worker today
+        const attendance = todayAttendance?.find(a => a.worker_id === ew.worker_id);
+        const department = attendance?.work_location || 'General';
+
+        if (!departmentMap.has(department)) {
+          departmentMap.set(department, {
+            departmentName: department,
+            totalWorkers: 0,
+            presentToday: 0,
+            absentToday: 0
+          });
+        }
+
+        const deptStats = departmentMap.get(department);
+        deptStats.totalWorkers++;
+
+        if (attendance && attendance.status === 'i') {
+          deptStats.presentToday++;
+        } else {
+          deptStats.absentToday++;
+        }
+      });
+    }
+
+    const departments = Array.from(departmentMap.values());
+
+    res.json(successResponse({
+      establishmentId: parseInt(establishmentId),
+      date,
+      departments
+    }, 'Department-wise statistics retrieved successfully.'));
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get department workers list with attendance status
+ * GET /api/attendance/department/:departmentName/workers
+ */
+export const getDepartmentWorkersWithAttendance = async (req, res, next) => {
+  try {
+    const { departmentName } = req.params;
+    const { establishmentId, date } = req.query;
+
+    if (!establishmentId) {
+      return res.status(400).json(errorResponse(ERROR_CODES.VALIDATION_ERROR, 'establishmentId query parameter is required.'));
+    }
+
+    const targetDate = date || new Date().toISOString().split('T')[0];
+
+    // Get all workers for this establishment
+    const { data: establishmentWorkers, error: workersError } = await supabase
+      .from('establishment_worker')
+      .select(`
+        estmt_worker_id,
+        worker_id,
+        worker:worker_id (
+          worker_id,
+          full_name,
+          mobile_number,
+          email_id
+        )
+      `)
+      .eq('establishment_id', establishmentId)
+      .eq('status', 'active');
+
+    if (workersError) throw workersError;
+
+    // Get attendance for the specified date
+    const { data: attendanceRecords, error: attendanceError } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('establishment_id', establishmentId)
+      .gte('check_in_date_time', `${targetDate}T00:00:00`)
+      .lte('check_in_date_time', `${targetDate}T23:59:59`);
+
+    if (attendanceError) throw attendanceError;
+
+    // Filter workers by department and build response
+    const workers = [];
+
+    if (establishmentWorkers) {
+      establishmentWorkers.forEach(ew => {
+        const attendance = attendanceRecords?.find(a => a.worker_id === ew.worker_id);
+        const workerDepartment = attendance?.work_location || 'General';
+
+        // Filter by department name
+        if (workerDepartment === departmentName || departmentName === 'All') {
+          workers.push({
+            workerId: ew.worker?.worker_id,
+            fullName: ew.worker?.full_name,
+            mobileNumber: ew.worker?.mobile_number,
+            emailId: ew.worker?.email_id,
+            attendanceStatus: attendance ? 'present' : 'absent',
+            checkInTime: attendance?.check_in_date_time || null,
+            checkOutTime: attendance?.check_out_date_time || null,
+            workLocation: attendance?.work_location || null
+          });
+        }
+      });
+    }
+
+    res.json(successResponse({
+      departmentName,
+      establishmentId: parseInt(establishmentId),
+      date: targetDate,
+      workers
+    }, 'Department workers list retrieved successfully.'));
+
   } catch (error) {
     next(error);
   }

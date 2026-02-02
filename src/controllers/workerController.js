@@ -357,7 +357,7 @@ export const getWorkerDashboardDetails = async (req, res, next) => {
 
     const { data: monthRecords, error: statsError } = await supabase
       .from('attendance')
-      .select('status, check_out_date_time')
+      .select('status, check_in_date_time, check_out_date_time, gross_hours, effective_hours')
       .eq('worker_id', workerId)
       .gte('check_in_date_time', startOfMonth.toISOString());
 
@@ -366,7 +366,16 @@ export const getWorkerDashboardDetails = async (req, res, next) => {
     const stats = {
       present: monthRecords.filter(r => r.status === 'o' || r.check_out_date_time).length,
       incomplete: monthRecords.filter(r => r.status === 'i' && !r.check_out_date_time).length,
-      absent: 0 // Mock for now, would need shift logic
+      absent: 0, // Mock for now, would need shift logic
+      totalGrossHours: monthRecords.reduce((acc, r) => acc + (parseFloat(r.gross_hours) || 0), 0).toFixed(2),
+      totalEffectiveHours: monthRecords.reduce((acc, r) => acc + (parseFloat(r.effective_hours) || 0), 0).toFixed(2),
+      // Daily Stats
+      totalGrossHoursToday: monthRecords
+        .filter(r => r.check_in_date_time.startsWith(today))
+        .reduce((acc, r) => acc + (parseFloat(r.gross_hours) || 0), 0).toFixed(2),
+      totalEffectiveHoursToday: monthRecords
+        .filter(r => r.check_in_date_time.startsWith(today))
+        .reduce((acc, r) => acc + (parseFloat(r.effective_hours) || 0), 0).toFixed(2)
     };
 
     const response = {

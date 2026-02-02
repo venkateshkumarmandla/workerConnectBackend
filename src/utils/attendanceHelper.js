@@ -56,17 +56,14 @@ export const recordLoginAttendance = async (workerId) => {
             const lastRecord = todayRecords[0];
             console.log(`🔍 [Attendance] Found existing record for today. Status: ${lastRecord.status}, Check-out: ${lastRecord.check_out_date_time}`);
 
-            // If there's an active check-in (not checked out)
+            // If there's an active check-in (not checked out), return success but indicate already active
             if (lastRecord.status === 'i' && !lastRecord.check_out_date_time) {
                 console.log('✅ [Attendance] Worker already has an active check-in for today.');
                 return { success: true, message: 'You are already logged in for today.', alreadyActive: true };
             }
 
-            // If they already checked out today, the user spec says "Attendance already recorded for today" (Login blocked)
-            if (lastRecord.status === 'o' || lastRecord.check_out_date_time) {
-                console.log('🛑 [Attendance] Attendance already completed for today.');
-                return { success: false, message: 'Attendance already recorded for today.', blocked: true };
-            }
+            // If they already checked out, allow them to check in again (Multi-session)
+            console.log('ℹ️ [Attendance] Previous session closed. Allowing new session.');
         }
 
         // 3. Create new check-in record

@@ -9,7 +9,10 @@ import {
   getDailyStatus,
   getMonthlySummary,
   getEstablishmentMonthlyReport,
-  getDepartmentAttendanceData
+  getDepartmentAttendanceData,
+  getWorkerMonthlySummaryWithCounts,
+  getEstablishmentDepartmentStats,
+  getDepartmentWorkersWithAttendance
 } from '../controllers/attendanceController.js';
 import { authenticateSession } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -35,5 +38,10 @@ router.get('/establishment/:establishmentId', authenticateSession, asyncHandler(
 router.get('/current', authenticateSession, asyncHandler(getCurrentlyCheckedInWorkers));
 router.get('/current/count', authenticateSession, asyncHandler(getCurrentCount));
 router.get('/today', authenticateSession, asyncHandler(getTodayAttendance));
+
+// New enhanced attendance APIs
+router.get('/worker/:workerId/monthly-summary', authenticateSession, asyncHandler(getWorkerMonthlySummaryWithCounts));
+router.get('/establishment/:establishmentId/department-stats', authenticateSession, asyncHandler(getEstablishmentDepartmentStats));
+router.get('/department/:departmentName/workers', authenticateSession, asyncHandler(getDepartmentWorkersWithAttendance));
 
 export default router;
