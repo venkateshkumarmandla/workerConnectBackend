@@ -23,10 +23,17 @@ export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 // Test connection
 export const testConnection = async () => {
   try {
-    const { data, error } = await supabase
+    // Add a race condition to prevent hanging indefinitely
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Connection timeout')), 5000)
+    );
+
+    const connectionPromise = supabase
       .from('state')
       .select('count')
       .limit(1);
+
+    const { error } = await Promise.race([connectionPromise, timeoutPromise]);
 
     if (error) throw error;
     console.log('✅ Successfully connected to Supabase PostgreSQL');

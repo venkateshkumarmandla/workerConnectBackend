@@ -24,7 +24,7 @@ import samlRoutes, { handleMetadata } from './routes/saml.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const CLIENT_URL = process.env.CLIENT_URL;
 
@@ -561,16 +561,8 @@ app.use(errorHandler);
 
 const startServer = async () => {
   try {
-    // Test database connection
-    console.log('🔄 Testing Supabase connection...');
-    const connected = await testConnection();
-
-    if (!connected) {
-      console.error('⚠️  Database connection failed, but starting server anyway');
-      console.error('   Please check your .env file and Supabase credentials');
-    }
-
-    // Start server - bind to 0.0.0.0 to allow external connections
+    // Start listening on PORT immediately to prevent deployment timeout (e.g. on Render)
+    // Deployment platforms expect the application to bind to the port within a few seconds.
     app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('============================================');
@@ -626,6 +618,10 @@ const startServer = async () => {
       console.log('============================================');
       console.log('');
     });
+
+    // Test database connection in background
+    console.log('🔄 Testing Supabase connection in background...');
+    testConnection();
 
   } catch (error) {
     console.error('❌ Failed to start server:', error);
